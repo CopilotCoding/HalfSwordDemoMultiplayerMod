@@ -290,12 +290,11 @@ function Match.poll(world,pawn)
         next_menu_scan=os.clock()+.25
         for _,menu in ipairs(FindAllOf('UI_MainMenuSNF_C')or{})do
             if valid(menu)and menu:GetWorld():GetFullName()==world:GetFullName()and menu:IsInViewport()then
-                -- A native KO/give-up callback can re-open its menu after a
-                -- reset. Keep the selected multiplayer session and loadout.
-                active=false;ready=false;started=false;awaiting_card=false
-                pending_entry=true
-                report('loading','Recovering the multiplayer arena after the native result flow')
-                break
+                -- Returning to fighter selection ends this entry. Starting
+                -- again requires a fresh Enter request and a fresh loadout.
+                -- Never treat a visible main menu as permission to auto-start.
+                Match.leave()
+                return false
             end
         end
     end

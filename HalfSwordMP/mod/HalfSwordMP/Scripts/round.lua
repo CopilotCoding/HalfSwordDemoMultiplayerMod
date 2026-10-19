@@ -10,6 +10,7 @@ local time_world,time_original
 local guarded={}
 local retired_fades={}
 local next_scan=0
+local surrender_widgets={}
 local result_classes={'UI_KO','UI_DED','UI_Lose','UI_WIN','UI_WinScreen','UI_WinScreen_Versus'}
 local function valid(o) return o~=nil and o:IsValid() end
 local function now(pawn)
@@ -21,7 +22,7 @@ local function now(pawn)
     return os.clock()
 end
 function Round.surrender(pawn)
-    if not valid(pawn)or pawn.DED or pawn.Health<=0 then return false end
+    if not Round.can_surrender(pawn)then return false end
     Round.guard_pawn(pawn)
     local s=guarded[pawn:GetFullName()]
     s.defeat=s.defeat or 'gave_up';pawn['Give Up']=true
@@ -35,6 +36,61 @@ local function block_result(widget,class)
         widget:StopAllAnimations()
     end
 end
+local function retire_surrender(widget)
+    if not valid(widget)then return end
+    widget:CancelLatentActions();widget:StopAllAnimations();widget.TickFrequency=1
+    widget:SetRenderOpacity(0);widget:SetIsEnabled(false);widget:RemoveFromParent()
+end
+function Round.keep_surrender_meter(widget)
+    local session=_G.HSMPSession
+    if not session or not session.owns_arena()then return end
+    local own=session.capture_pawn and session.capture_pawn()
+    local master=widget['My Master (Willie)']
+    if not valid(own)or not valid(master)or master:GetFullName()~=own:GetFullName()then return end
+    surrender_widgets[widget:GetFullName()]=widget
+    if not Round.can_surrender(own)then
+        own['Give Up']=false;own['Give Up 2 (Temp)']=false
+        retire_surrender(widget);return
+    end
+    local state=guarded[own:GetFullName()]
+    if (state and state.defeat=='gave_up')or widget['Hold Meter']>=1 then
+        Round.surrender(own)
+        -- Keep the native meter running until it fills. Only its completed
+        -- single-player fade/menu path is retired before the shared restart.
+        retire_surrender(widget)
+    end
+end
+local injury_fields={'Health','Head Health','Body Upper Health','Body Lower Health',
+    'Arm_R Health','Arm_L Health','Leg_R Health','Leg_L Health','Neck Health'}
+local function badly_hurt(pawn)
+    for _,field in ipairs(injury_fields)do
+        local value=pawn[field]
+        if type(value)=='number'and value<50 then return true end
+    end
+    return false
+end
+function Round.can_surrender(pawn)
+    if not valid(pawn)or pawn.DED or pawn.Health<=0 then return false end
+    return true
+end
+function Round.keep_surrender_prompt(widget)
+    local session=_G.HSMPSession
+    if not session or not session.owns_arena()or(session.in_match and not session.in_match())then return end
+    local own=session.capture_pawn and session.capture_pawn()
+    local master=widget['My Player']
+    if not valid(own)or not valid(master)or master:GetFullName()~=own:GetFullName()then return end
+    local state=guarded[own:GetFullName()]
+    local prompt=widget.TextHurt
+    if not state or state.defeat or not valid(prompt)then return end
+    if not state.prompt_hurt and not prompt:IsVisible()then return end
+    if not badly_hurt(own)then state.prompt_hurt=nil;return end
+    -- Native HUD visibility can switch off when one regenerating value crosses
+    -- its threshold although other limbs are still badly injured. Preserve the
+    -- native prompt after it has appeared, until recovery or the next life.
+    state.prompt_hurt=true
+    if not prompt:IsVisible()then prompt:SetVisibility(4)end
+    if prompt:GetRenderOpacity()<1 then prompt:SetRenderOpacity(1)end
+end
 function Round.guard_pawn(pawn)
     if not valid(pawn)then return end
     local key=pawn:GetFullName()
@@ -46,7 +102,7 @@ function Round.guard_pawn(pawn)
     end
     local clock=now(pawn)
     if pawn.DED or pawn.Health<=0 then s.defeat='dead'
-    elseif not s.defeat and pawn['Give Up']then s.defeat='gave_up'
+    elseif not s.defeat and pawn['Give Up']and pawn['Give Up 2 (Temp)']==true and Round.can_surrender(pawn)then s.defeat='gave_up'
     elseif not s.defeat then
         -- Native Force Fall briefly sets consciousness to zero, then immediately
         -- recovers. Confirm a sustained KO instead of latching that single frame.
@@ -76,27 +132,36 @@ function Round.guard_pawn(pawn)
         else s.incapable_since=nil end
         if stalled then s.defeat=s.defeat or 'incapacitated'end
     end
-    -- Some native downed states stop routing the G action. Poll only the own
-    -- fallen fighter, leaving normal standing surrender to the native game.
+    -- Some downed states stop routing G. Forward missing press/release edges
+    -- to the same native handlers; the native widget still owns its hold meter.
     local session=_G.HSMPSession
     local own=session and session.capture_pawn and session.capture_pawn()
-    if pawn.Fallen and not s.defeat and valid(own)and own:GetFullName()==key
+    if Round.can_surrender(pawn)and not s.defeat and valid(own)and own:GetFullName()==key
         and (not _G.HSMPUI or not _G.HSMPUI.is_open())then
         local ok,helpers=pcall(require,'UEHelpers')
         local pc
         if ok and helpers.GetPlayerController then pc=helpers.GetPlayerController()end
-        if valid(pc)and pc:IsInputKeyDown({KeyName=FName('G')})then
-            s.give_up_since=s.give_up_since or clock
-            if clock-s.give_up_since>=3 then s.defeat='gave_up';pawn['Give Up']=true end
-        else s.give_up_since=nil end
-    else s.give_up_since=nil end
+        if valid(pc)and not s.routing_g then
+            local held=pc:IsInputKeyDown({KeyName=FName('G')})
+            if held and not s.g_held and not pawn['Give Up']then
+                s.routing_g=true;s.routed_g=true
+                pawn:InpActEvt_G_K2Node_InputKeyEvent_5({KeyName=FName('G')})
+                s.routing_g=false
+            elseif not held and s.routed_g then
+                s.routing_g=true;s.routed_g=false
+                pawn:InpActEvt_G_K2Node_InputKeyEvent_6({KeyName=FName('G')})
+                s.routing_g=false
+            end
+            s.g_held=held
+        end
+    else s.g_held=false end
     -- Player is a native control-mode switch, not just a death-UI flag. A KO
     -- must never permanently convert the local controlled fighter into an AI.
     -- Stop exit timelines only for a latched defeat, leaving recovery alone.
     if s.defeat then
         for _,t in ipairs(s.timelines)do if valid(t)and t:IsPlaying()then t:Stop()end end
     end
-    if s.defeat=='dead'or s.defeat=='gave_up'then pawn.Player=false end
+    if s.defeat=='dead'then pawn.Player=false end
 end
 function Round.defeated(pawn)
     local s=valid(pawn)and guarded[pawn:GetFullName()]
@@ -131,6 +196,22 @@ function Round.install_hooks()
                 if _G.HSMPRoundWidgetDispatch then _G.HSMPRoundWidgetDispatch(ctx:get(),class)end
             end)}
         end
+    end
+    _G.HSMPSurrenderPromptDispatch=Round.keep_surrender_prompt
+    -- The cooked HUD uses Unreal's fast event-graph path, bypassing its Tick
+    -- wrapper. Run after the graph so native visibility has finished updating.
+    local hud='/Game/UI/UI_HUD.UI_HUD_C:ExecuteUbergraph_UI_HUD'
+    if not _G.HSMPRoundWidgetHooks[hud]and valid(StaticFindObject(hud))then
+        _G.HSMPRoundWidgetHooks[hud]={RegisterHook(hud,function(ctx)
+            if _G.HSMPSurrenderPromptDispatch then _G.HSMPSurrenderPromptDispatch(ctx:get())end
+        end)}
+    end
+    _G.HSMPSurrenderMeterDispatch=Round.keep_surrender_meter
+    local meter='/Game/UI/UI_GiveUp.UI_GiveUp_C:ExecuteUbergraph_UI_GiveUp'
+    if not _G.HSMPRoundWidgetHooks[meter]and valid(StaticFindObject(meter))then
+        _G.HSMPRoundWidgetHooks[meter]={RegisterHook(meter,function(ctx)
+            if _G.HSMPSurrenderMeterDispatch then _G.HSMPSurrenderMeterDispatch(ctx:get())end
+        end)}
     end
 end
 function Round.hold(world)
@@ -220,6 +301,8 @@ function Round.poll(world,before_reset)
     for _,a in ipairs(FindAllOf("LevelScriptActor") or {}) do
         if valid(a) and a:GetWorld():GetFullName()==world:GetFullName()
             and a:GetClass():GetFName():ToString()=="Arena_Cutting_Map_C" then
+            for _,widget in pairs(surrender_widgets)do retire_surrender(widget)end
+            surrender_widgets={}
             before_reset()
             guarded={}
             a:LevelReset()
@@ -232,6 +315,8 @@ function Round.poll(world,before_reset)
     return false
 end
 function Round.release()
+    for _,widget in pairs(surrender_widgets)do retire_surrender(widget)end
+    surrender_widgets={}
     guarded={}
     retired_fades={}
     next_scan=0

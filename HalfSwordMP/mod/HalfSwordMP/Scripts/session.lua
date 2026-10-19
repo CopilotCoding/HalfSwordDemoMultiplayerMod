@@ -80,9 +80,6 @@ local function install_spawn_hook()
 end
 function Session.capture_pawn() return local_pawn end
 function Session.round_outcome(pawn)return Round.defeated(pawn)end
-function Session.give_up()
-    return Match.playable()and Round.surrender(local_pawn)
-end
 function Session.injury_source()return Damage.injury_source()end
 function Session.sync_injury(pawn)
     if connected and Match.playable()and valid(local_pawn)and (not pawn or same(pawn,local_pawn))and _G.HSMPAvatar then
@@ -127,8 +124,10 @@ function Session.tick(pawn)
     Round.install_hooks()
     if not Match.poll(world,pawn) then
         if local_pawn or local_world then
+            if _G.HSMPDropped and _G.HSMPDropped.reset then _G.HSMPDropped.reset()end
             Fighter.destroy();Waiting.release();Round.release();Damage.stop()
             local_pawn,local_world,retiring_pawn,frame=nil,nil,nil,nil
+            input_pawn,previous_remote_owner=nil,nil
             injury_state,injury_attacker=nil,nil
         end
         return role

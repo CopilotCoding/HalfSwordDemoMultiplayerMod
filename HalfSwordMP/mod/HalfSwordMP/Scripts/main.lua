@@ -180,4 +180,4 @@ assert(type(LoopInGameThreadAfterFrames)=='function','HalfSwordMP requires its p
 _G.HSMPUpdate=update
 _G.HSMPUpdateHandle=LoopInGameThreadAfterFrames(1,update)
 
-log("0.10.10: selected gear, native enemy weapon pickup and downed round recovery. F8: discovery. F9: local pose preview.")
+log("0.10.11: native surrender prompt and explicit match entry. F8: discovery. F9: local pose preview.")

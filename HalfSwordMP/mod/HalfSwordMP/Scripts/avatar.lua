@@ -250,7 +250,10 @@ function Avatar.capture(pawn, serial,native)
             if key=='consciousness'and _G.HSMPSession and _G.HSMPSession.in_match and _G.HSMPSession.in_match()then
                 value=(outcome=='unconscious'or outcome=='incapacitated')and 0 or math.max(.001,value)
             elseif outcome=='dead'and key=='health'then value=0
-            elseif outcome=='gave_up'and key=='give_up'then value=1 end
+            elseif key=='give_up'and _G.HSMPSession and _G.HSMPSession.in_match and _G.HSMPSession.in_match()then
+                -- Native Give Up means the meter has started, not finished.
+                value=outcome=='gave_up'and 1 or 0
+            end
             if type(value) == "boolean" then value = value and 1 or 0 end
             if type(value) == "number" and value == value and math.abs(value) <= 10000000 then
                 lines[#lines+1] = string.format("V|%s|%.4f",key,value)

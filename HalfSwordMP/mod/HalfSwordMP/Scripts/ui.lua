@@ -134,9 +134,7 @@ local function create()
         if request("restart_round")then status:SetText(text("Starting the next multiplayer round..."))end
     end)
     restart:SetVisibility(1);restart:SetIsEnabled(false)
-    button(content,'Give up this round',24,335,584,function()
-        if _G.HSMPSession and _G.HSMPSession.give_up()then UI.set_open(false)end
-    end)
+    place(content,label('Hold G to fill the native give-up meter. Release to cancel.',15),24,335,590,36)
     automatic=place(content,make("CheckBox"),24,394,28,30)
     automatic:SetIsChecked(last_auto)
     place(content,label("Automatic updates from the host",16),66,394,500,30)

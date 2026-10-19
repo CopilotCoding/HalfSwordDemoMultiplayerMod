@@ -7,7 +7,7 @@ injury events represented on their PC. The mod adds an in-game multiplayer
 panel, shared rounds, a host-only restart button and optional updates from the
 host.
 
-**Current build: 0.10.10 · Protocol: 17 · Players: 2**
+**Current build: 0.10.11 · Protocol: 17 · Players: 2**
 
 [Install](#install) · [Play](#play) · [Direct IP](#direct-ip) ·
 [Updates](#optional-updates) · [Development summary](#development-summary)
@@ -28,7 +28,19 @@ across shared resets. Both PCs must run this version (protocol 17).
 
 ## Current build and validation
 
-0.10.10 saves the actual selected clothing colours, shield material/pattern and
+0.10.11 keeps the native **hold G** surrender meter. You can start it at any
+time; releasing G before it fills cancels. Beginning a hold is not a completed
+surrender and does not switch the fighter into AI control. Only a filled meter
+ends the round, and only the subsequent single-player fade/menu exit is retired.
+The instant F5 surrender button and custom three-second G timer have been removed.
+
+Returning to the main menu now leaves the current match and clears its saved
+selection. Change your fighter/gear there, then choose **Enter multiplayer match**
+again. A visible main menu is never treated as an automatic re-entry request.
+The native hurt hint stays visible through partial recovery while serious
+injuries remain, even if regenerating health crosses its original display threshold.
+
+The selected gear work from 0.10.10 saves actual clothing colours, shield material/pattern and
 all seven native weapon slots, including sheathed sidearms. Native respawn can
 reroll cosmetic values; the saved construction and appearance are restored after
 setup finishes. Weapon material copying also preserves preset shield patterns
@@ -40,14 +52,23 @@ the receiving game uses native hand setup to create a usable weapon. A transferr
 drop disappears from its previous location on both peers. Ground movement still
 comes from the originating game's simulation, rather than one shared physics world.
 
-The panel adds **Give up this round**, including while downed. Holding **G** for
-three seconds also works as a fallback while downed. KO/death and confirmed
-incapacity end the round; resting after a recoverable fall does not. Failed
-recovery attempts are checked over time. Escape now toggles one native pause
-menu, and Resume retires its input callbacks. Match recovery keeps the selected
-loadout, rejects previous-life opponents and retries transient renderer failures.
+KO/death and confirmed incapacity end the round; resting after a recoverable fall
+does not. Failed recovery attempts are checked over time. Missing G press/release
+edges in downed states are routed to the native handlers, preserving the game's
+meter. Escape toggles one native pause menu, and Resume retires its input callbacks.
+Round setup rejects previous-life opponents and retries transient renderer failures.
 
-Validation: **133 automated checks passed**. In two visible native game windows,
+Validation: **136 automated checks passed**. In the 0.10.11 visible host/client
+test, both healthy fighters started and cancelled native G holds without ending
+the round. The hurt prompt survived health regenerating above 50 while a leg
+remained injured. Each peer then completed its native meter; partial progress
+kept player identity and control direction, and both opponents returned after
+the shared reset and stayed present beyond the old fade delay. The visible
+return-to-menu check was interrupted by Escape and did not complete; automated
+checks verify that a visible main menu stays open until explicit re-entry and
+that leaving clears the old loadout.
+
+In the preceding 0.10.10 visible native game windows,
 three successive resets (KO, unrecoverable downing and downed surrender) retained
 the exact sampled weapon construction, armour classes, clothing colours, shield
 materials and sidearms. Each opponent's sampled clothing and hand appearance
@@ -178,8 +199,8 @@ motion are suppressed while multiplayer owns the match. This targets
 
 Hold **G** to give up using the game's native surrender action. Its give-up UI
 is preserved; surrender ends the shared round. The single-player death screen's
-return-to-menu action stays suppressed. While downed, hold G for three seconds
-or use **Give up this round** in F5. To collect an enemy's dropped weapon, approach
+return-to-menu action stays suppressed. Hold G until the native meter fills;
+release it to cancel. This is available while healthy or downed. To collect an enemy's dropped weapon, approach
 it and use E/Q with a free hand.
 
 Each reset runs the native Duel card handler again with the selected fighter
