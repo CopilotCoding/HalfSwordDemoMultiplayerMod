@@ -69,8 +69,10 @@ def validate_pose(pose):
     if pose is None:
         return True
     required={"map", "mesh", "root", "bones", "parts", "materials", "hidden", "vitals", "parameters", "effects"}
-    if not isinstance(pose, dict) or set(pose)-{"colliders","equipment","velocity"}!=required:
+    if not isinstance(pose, dict) or set(pose)-{"colliders","equipment","velocity","drops","pickups"}!=required:
         return False
+    from dropped import validate_items,validate_requests
+    if not validate_items(pose.get('drops',[]))or not validate_requests(pose.get('pickups',[])):return False
     if "velocity"in pose and not finite(pose["velocity"],3,5000):return False
     if "equipment" in pose:
         from equipment import validate_equipment
@@ -99,14 +101,14 @@ def validate_pose(pose):
                 "id", "kind", "asset", "transform", "bones", "materials", "hidden", "parameters"}:
             return False
         if (not name(part["id"]) or part["id"] == "body" or part["id"] in seen
-                or part["kind"] not in ("S", "K", "L", "D") or not name(part["asset"])
+                or part["kind"] not in ("S", "K", "L", "D", "T") or not name(part["asset"])
                 or not isinstance(part["transform"], list) or not transform(part["transform"])
                 or not bones_ok(part["bones"]) or not materials_ok(part["materials"])
                 or not hidden_ok(part["hidden"]) or not parameters_ok(part["parameters"], part["materials"])):
             return False
-        if part["kind"] in ("S","D") and (part["bones"] or part["hidden"]):
+        if part["kind"] in ("S","D","T") and (part["bones"] or part["hidden"]):
             return False
-        if part["kind"] == "D" and (not part["asset"].startswith("/Game/Assets/Weapons/")
+        if part["kind"] in ("D","T") and (not part["asset"].startswith("/Game/Assets/Weapons/")
                                      or "/Collisions/" in part["asset"]):
             return False
         if part["kind"] == "L" and part["bones"]:
@@ -161,6 +163,9 @@ def pose_text(pose, counter):
         from equipment import equipment_lines
         lines.append("GEAR|1")
         lines.extend(equipment_lines(pose["equipment"]))
+    if 'drops'in pose or 'pickups'in pose:
+        from dropped import item_lines
+        lines.extend(item_lines(pose.get('drops',[]),pose.get('pickups',[])))
     for g in pose.get("colliders",[]):
         lines.append("|".join(["G",g["id"],g["shape"],g["asset"],
             *(str(n) for n in g["transform"]),*(str(n) for n in g["size"]),
@@ -192,9 +197,18 @@ def read_pose(path: Path):
         meshes = {"body": pose}
         effects={}
         weapons={}
+        drops={}
         for line in lines[1:-1]:
             f = line.split("|")
-            if f[0]=="S"and len(f)==4 and "velocity"not in pose:
+            if f[0]=='DW'and len(f)==14 and f[1]not in drops:
+                item={'id':f[1],'class':f[2],'transform':[float(n)for n in f[3:13]],'grant':int(f[13])}
+                drops[f[1]]=item;pose.setdefault('drops',[]).append(item)
+            elif f[0]=='DR'and len(f)==4:
+                pose.setdefault('pickups',[]).append({'owner':int(f[1]),'id':f[2],'hand':f[3]})
+            elif f[0]in('DK','DZ','DL','DY','DO')and len(f)>1 and f[1]in drops:
+                from equipment import read_construction
+                read_construction(drops[f[1]],[f[0][1:],*f[1:]])
+            elif f[0]=="S"and len(f)==4 and "velocity"not in pose:
                 pose["velocity"]=[float(n)for n in f[1:]]
             elif f==["GEAR","1"] and "equipment" not in pose:
                 pose["equipment"]={"weapons":[],"armor":[]}

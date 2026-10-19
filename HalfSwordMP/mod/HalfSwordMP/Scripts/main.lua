@@ -4,9 +4,16 @@ local Pose = require("pose")
 local pending = false
 local last_pawn = ""
 local renderer_failed = false
+local renderer_retry_at,renderer_failures=0,0
 
 local function log(message)
     print("[HalfSwordMP] " .. message .. "\n")
+end
+local function render_failed(err)
+    renderer_failed=true;renderer_failures=renderer_failures+1
+    renderer_retry_at=os.clock()+math.min(4,.25*2^math.min(renderer_failures-1,4))
+    pcall(Pose.destroy)
+    log('Pose renderer will retry: '..tostring(err))
 end
 
 local function valid(object)
@@ -91,6 +98,7 @@ local function update()
     if pending then return end
     pending = true
         local started=os.clock()
+        if renderer_failed and started>=renderer_retry_at then renderer_failed=false end
         if (_G.HSMPDiagnosticRequests or 0)>0 then
             _G.HSMPDiagnosticRequests=0
             local ok,err=pcall(diagnose);if not ok then log('Discovery error: '..tostring(err))end
@@ -106,7 +114,7 @@ local function update()
                 local f=io.open(paths.runtime.."/render-performance.txt","w")
                 if f then f:write(string.format("draw_average_ms=%.3f\ndraw_max_ms=%.3f\ndraw_count=%d\n",draw_total/draw_count,draw_max,draw_count));f:close() end
             end
-            if not ok then renderer_failed=true;pcall(Pose.destroy);log("Pose animation stopped: "..tostring(err)) end
+            if not ok then render_failed(err)end
             pending=false
             return
         end
@@ -150,10 +158,8 @@ local function update()
             if not renderer_failed then
                 local render_ok, render_error = pcall(Pose.update, paths.runtime, source, text)
                 if not render_ok then
-                    renderer_failed = true
-                    pcall(Pose.destroy)
-                    log("Pose renderer stopped: " .. tostring(render_error))
-                end
+                    render_failed(render_error)
+                else renderer_failures=0 end
             end
         end)
         pending = false
@@ -174,4 +180,4 @@ assert(type(LoopInGameThreadAfterFrames)=='function','HalfSwordMP requires its p
 _G.HSMPUpdate=update
 _G.HSMPUpdateHandle=LoopInGameThreadAfterFrames(1,update)
 
-log("0.10.9: dropped native weapons remain visible to both peers. F8: discovery. F9: local pose preview.")
+log("0.10.10: selected gear, native enemy weapon pickup and downed round recovery. F8: discovery. F9: local pose preview.")

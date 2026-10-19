@@ -20,8 +20,11 @@ local remote_vitals={}
 local remote_velocity={0,0,0}
 local remote_frame
 local remote_equipment,remote_rows,remote_colliders
+local remote_drops,remote_pickups={},{}
+local Dropped=dofile(require('paths').scripts..'/dropped_weapons.lua')
 local native_visible=false
 local appearance_signature
+local cosmetic_signature
 local appearance_version=0
 local appearance_updated=-100
 local last_remote_valid=-100
@@ -64,7 +67,9 @@ function Pose.destroy()
     remote_velocity={0,0,0}
     remote_frame=nil
     remote_equipment,remote_rows,remote_colliders=nil,nil,nil;native_visible=false
+    remote_drops,remote_pickups={},{}
     appearance_signature=nil
+    cosmetic_signature=nil
 end
 
 function Pose.toggle_preview()
@@ -82,6 +87,7 @@ function Pose.frame()return remote_frame end
 function Pose.transforms() return body_transforms end
 function Pose.hidden() return hidden.body end
 function Pose.equipment() return remote_equipment,remote_rows end
+function Pose.drops()return remote_drops,remote_pickups end
 function Pose.colliders() return remote_colliders end
 function Pose.appearance()return component,parts end
 function Pose.appearance_version()return appearance_version end
@@ -90,7 +96,7 @@ function Pose.use_native(value)
     native_visible=value
     if valid(component) then component:SetVisibility(not value,false);component:SetHiddenInGame(value,false) end
     for _,p in pairs(parts) do
-        local show=not value or p.kind=='D'
+        local show=not value or p.kind=='D'or p.kind=='T'
         if valid(p.component) then p.component:SetVisibility(show,false);p.component:SetHiddenInGame(not show,false) end
     end
 end
@@ -205,7 +211,7 @@ local function render_parts(lines, pawn, offset)
         local v = fields(lines[i])
         if v[1] == "C" and #v == 14 then
             local id,kind,asset_name = v[2],v[3],v[4]
-            local static=kind=='S'or kind=='D'
+            local static=kind=='S'or kind=='D'or kind=='T'
             local asset = Assets.mesh(asset_name,not static)
             local class_name = not static and "/Script/Engine.PoseableMeshComponent" or "/Script/Engine.StaticMeshComponent"
             local correct = valid(asset) and (((kind == "K" or kind == "L") and asset:IsA("/Script/Engine.SkeletalMesh"))
@@ -229,7 +235,7 @@ local function render_parts(lines, pawn, offset)
                     p = {component=c,asset=asset_name,kind=kind}
                     parts[id] = p
                 end
-                local show=not native_visible or kind=='D'
+                local show=not native_visible or kind=='D'or kind=='T'
                 p.component:SetHiddenInGame(not show,false)
                 p.component:SetVisibility(show,false)
                 if kind == "L" then
@@ -360,16 +366,29 @@ local function update(runtime, pawn, local_text, remote_text)
         if key then remote_vitals[key]=tonumber(value) end
     end
     remote_owner=remote_vitals.owner_id
-    local appearance_rows={}
+    local appearance_rows,cosmetic_rows={},{}
     for _,line in ipairs(lines) do
         local kind=line:sub(1,2)
         if kind=='C|' then
-            local v=fields(line);appearance_rows[#appearance_rows+1]=table.concat({v[1],v[2],v[3],v[4]},'|')
-        elseif kind=='M|' or kind=='P|' or kind=='H|' then appearance_rows[#appearance_rows+1]=line end
+            local v=fields(line);local entry=table.concat({v[1],v[2],v[3],v[4]},'|')
+            appearance_rows[#appearance_rows+1]=entry;cosmetic_rows[#cosmetic_rows+1]=entry
+        elseif kind=='M|' or kind=='P|' or kind=='H|' then
+            appearance_rows[#appearance_rows+1]=line
+            if kind=='M|'then cosmetic_rows[#cosmetic_rows+1]=line
+            elseif kind=='P|'then
+                local v=fields(line);local name=v[4]:lower();local transient=false
+                for _,word in ipairs({'blood','wound','damage','opacity','hide','hidden','camera','dither','fade','alpha'})do
+                    if name:find(word,1,true)then transient=true;break end
+                end
+                if not transient then cosmetic_rows[#cosmetic_rows+1]=line end
+            end
+        end
     end
     local next_appearance=table.concat(appearance_rows,'\n')
     if not native_visible or (next_appearance~=appearance_signature and clock-appearance_updated>=.25) then
-        render_parts(lines,pawn,offset);appearance_signature=next_appearance;appearance_version=appearance_version+1
+        render_parts(lines,pawn,offset);appearance_signature=next_appearance
+        local signature=table.concat(cosmetic_rows,'\n')
+        if signature~=cosmetic_signature then cosmetic_signature=signature;appearance_version=appearance_version+1 end
         appearance_updated=clock
     end
     local rows={}
@@ -389,6 +408,7 @@ local function update(runtime, pawn, local_text, remote_text)
         end
     end
     remote_equipment,remote_rows=Equipment.read(rows),rows
+    remote_drops,remote_pickups=Dropped.read(rows)
     -- Native weapon Blueprints provide the collision shapes for this protocol.
     -- The former generic shapes are retained only for old local preview data.
     Geometry.prepare(actor,pawn,remote_equipment.present and {} or rows,identity)
@@ -418,10 +438,11 @@ function Pose.animate()
     if native_visible then
         -- Dropped weapons belong to the world, not the native stand-in's hands.
         -- Keep their visual meshes moving even while its pose proxy is hidden.
-        local t=identity(draw_pawn.Mesh)
+        local t
         for id,p in pairs(parts)do
             local n=frame.parts[id]
-            if p.kind=='D'and n and valid(p.component)then
+            if (p.kind=='D'or p.kind=='T')and n and valid(p.component)then
+                t=t or identity(draw_pawn.Mesh)
                 t.Translation.X,t.Translation.Y,t.Translation.Z=n[1],n[2],n[3]
                 t.Rotation.X,t.Rotation.Y,t.Rotation.Z,t.Rotation.W=n[4],n[5],n[6],n[7]
                 t.Scale3D.X,t.Scale3D.Y,t.Scale3D.Z=n[8],n[9],n[10]

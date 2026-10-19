@@ -15,6 +15,8 @@ local instance_selection
 local selected_loadout,loadout_pawn,loadout_after,loadout_done
 local Equipment
 local retired_cards={}
+local next_menu_scan=0
+local next_card_scan=0
 local function valid(o) return o~=nil and o:IsValid() end
 function Match.retire_card(card)
     if not valid(card)then return end
@@ -61,11 +63,18 @@ function Match.loadout_ready(pawn)
     local name=pawn:GetFullName()
     local clock=helpers.GetGameplayStatics():GetRealTimeSeconds(pawn:GetWorld())
     if name~=loadout_pawn then loadout_pawn,loadout_after,loadout_done=name,clock+2,false end
-    if loadout_done then return true end
+    if loadout_done==true then return true end
     if clock<loadout_after then return false end
     Equipment=Equipment or dofile(paths.scripts..'/equipment.lua')
+    if loadout_done=='settling'then
+        Equipment.restore_cosmetics(pawn,selected_loadout)
+        loadout_done=true;return true
+    end
     if not selected_loadout then selected_loadout=Equipment.save_loadout(pawn)
-    else Equipment.restore_loadout(pawn,selected_loadout)end
+    else
+        Equipment.restore_loadout(pawn,selected_loadout)
+        loadout_after=clock+.5;loadout_done='settling';return false
+    end
     loadout_done=true
     return true
 end
@@ -139,6 +148,10 @@ function Match.install_hooks()
 end
 function Match.prepare(world)
     if not active then return end
+    if ready then
+        if os.clock()<next_card_scan then return end
+        next_card_scan=os.clock()+.25
+    end
     local found=false
     for _,card in ipairs(FindAllOf("UI_Cards_C") or {}) do
         if valid(card) and card:GetWorld():GetFullName()==world:GetFullName() and card:IsInViewport() then
@@ -242,6 +255,11 @@ function Match.enter(world,pawn)
             pending_entry=false
             active=true
             remember_selection()
+            local preview=menu.MyDressUpDarling
+            if valid(preview)and not selected_loadout then
+                Equipment=Equipment or dofile(paths.scripts..'/equipment.lua')
+                selected_loadout=Equipment.save_loadout(preview)
+            end
             awaiting_card=true
             bypass_tutorial()
             Match.install_hooks()
@@ -268,11 +286,15 @@ function Match.enter(world,pawn)
     return false
 end
 function Match.poll(world,pawn)
-    if ready then
+    if ready and os.clock()>=next_menu_scan then
+        next_menu_scan=os.clock()+.25
         for _,menu in ipairs(FindAllOf('UI_MainMenuSNF_C')or{})do
             if valid(menu)and menu:GetWorld():GetFullName()==world:GetFullName()and menu:IsInViewport()then
-                Match.leave()
-                report('off','Select your fighter, then Enter multiplayer match')
+                -- A native KO/give-up callback can re-open its menu after a
+                -- reset. Keep the selected multiplayer session and loadout.
+                active=false;ready=false;started=false;awaiting_card=false
+                pending_entry=true
+                report('loading','Recovering the multiplayer arena after the native result flow')
                 break
             end
         end

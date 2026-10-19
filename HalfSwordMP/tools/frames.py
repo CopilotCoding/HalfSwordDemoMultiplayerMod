@@ -58,6 +58,7 @@ def pose_frame(pose,center):
         for bone in part["bones"]:
             t=bone[1:];transform(t,center);bone[1:]=t
     for collider in result.get("colliders",[]):transform(collider["transform"],center)
+    for item in result.get('drops',[]):transform(item['transform'],center)
     for effect in result["effects"]:
         transform(effect["transform"],center)
         for kind,name,values in effect["parameters"]:

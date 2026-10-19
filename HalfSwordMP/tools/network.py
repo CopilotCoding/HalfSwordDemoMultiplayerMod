@@ -24,7 +24,7 @@ from controls import validate_input,read_input,input_text
 MAGIC = b"HSMPD"
 MAX_PACKET = 65536
 MAX_DATAGRAM = 1200
-FRAGMENT = b"HSF16"
+FRAGMENT = b"HSF17"
 CHUNK = 1100
 TIMEOUT = 5.0
 NONCE = re.compile(r"^[a-f0-9]{32}$")
@@ -366,7 +366,7 @@ class Bridge:
         frame_ready=self.peer.role!="join" or self.frame is not None
         if self.peer.connected and frame_ready and now-self.last_input_send>=1/30:
             control=read_input(self.runtime/"local.input")
-            self.send(self.peer.controls(input_frame(control,self.frame)),self.peer.address)
+            if control is not None:self.send(self.peer.controls(input_frame(control,self.frame)),self.peer.address)
             self.last_input_send=now
         if frame_ready and self.peer.remote_input_counter!=self.last_written_input:
             if atomic_write(self.runtime/"remote.input",input_text(input_frame(self.peer.remote_input,self.frame))):

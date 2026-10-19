@@ -9,7 +9,10 @@ local pending_pawn,pending_owner
 local input_clock=-1
 local function valid(o)return o~=nil and o:IsValid()end
 local function same(a,b)return valid(a) and valid(b) and a:GetFullName()==b:GetFullName()end
-local function now(p)return helpers.GetGameplayStatics():GetRealTimeSeconds(p:GetWorld())end
+local function now(p)
+    if helpers.GetGameplayStatics then return helpers.GetGameplayStatics():GetRealTimeSeconds(p:GetWorld())end
+    return os.clock()
+end
 function Fighter.pawn()return lease and lease.pawn end
 function Fighter.owner()return lease and lease.owner end
 function Fighter.contact_frame(bone)
@@ -65,7 +68,6 @@ local function acquire(local_pawn,waiting,root,owner)
         local_controller=helpers.GetPlayerController(),split_disabled=gs:IsSplitscreenForceDisabled(world),
         owner=owner,held={},desired={},buttons=0,mouse={0,0},waiting=waiting,controller=p.Controller}
     local ok,err=pcall(function()
-        Input.install_hooks();Input.on_tick(step)
         assert(valid(lease.controller),'Native opponent has no AI controller')
         assert(waiting.drive(p),'Native opponent is not initialized')
         p['Team Int']=local_pawn['Team Int']==0 and 1 or 0
@@ -79,12 +81,9 @@ local function acquire(local_pawn,waiting,root,owner)
 end
 function Fighter.controls(local_pawn)
     if not valid(local_pawn) then return end
-    Input.configure('active',local_pawn,lease and lease.controller,lease and lease.buttons or 0)
-    Input.install_hooks()
-    local t=now(local_pawn)
-    if t>=input_clock then Input.write();input_clock=math.max(input_clock+1/30,t+.001)end
-    -- Input is captured for the owner. Remote bodies/held weapons use measured
-    -- snapshots instead of running another independent native movement loop.
+    -- Remote bodies and held weapons use measured poses rather than replayed input.
+    -- The native player already consumes its own input. Re-hooking every axis
+    -- and writing an unused 30 Hz input stream only adds work on slower PCs.
 end
 function Fighter.update(local_pawn,renderer,waiting)
     local root=renderer.root();local value,rows=renderer.equipment()
@@ -114,7 +113,10 @@ function Fighter.update(local_pawn,renderer,waiting)
     -- The same modular class can spawn with different blade materials. Use
     -- the owner's native sharpness, rigidity and other computed properties.
     Equipment.sync(lease.equipment,value)
-    Equipment.show_fighter(lease.equipment,rows)
+    local clock=now(local_pawn)
+    if lease.appearance_dirty or not lease.visibility_after or clock>=lease.visibility_after then
+        Equipment.show_fighter(lease.equipment,rows);lease.visibility_after=clock+.25
+    end
     lease.root=root
     renderer.use_native(true)
 end
@@ -135,11 +137,34 @@ function Fighter.appearance(renderer)
     if lease.appearance_time==stamp and not lease.appearance_dirty then return end
     lease.appearance_time=stamp;lease.appearance_dirty=false;lease.appearance_version=version
     local source,parts=renderer.appearance();local p=lease.pawn
-    local function copy(from,to)
+    local function copy(from,to,weapon)
         if not valid(from) or not valid(to) then return end
         for i=0,from:GetNumMaterials()-1 do
             local source=from:GetMaterial(i);local target=to:GetMaterial(i)
             if valid(source) and source:IsA('/Script/Engine.MaterialInstance') and valid(target) then
+                if weapon then
+                    local function base(m)
+                        for _=1,8 do
+                            if not valid(m)or not m:IsA('/Script/Engine.MaterialInstanceDynamic')then return m end
+                            m=m.Parent
+                        end
+                    end
+                    local source_base,target_base=base(source),base(target)
+                    if valid(source_base)and valid(target_base)and source_base:GetFullName()~=target_base:GetFullName()then
+                        -- Preset shields can choose a different material asset,
+                        -- without any tint parameter to copy. Preserve native
+                        -- blood textures when changing that cosmetic base.
+                        local textures={}
+                        if target:IsA('/Script/Engine.MaterialInstanceDynamic')then
+                            target.TextureParameterValues:ForEach(function(_,r)
+                                local p=r:get();local info=p.ParameterInfo
+                                textures[#textures+1]={info={Name=FName(info.Name:ToString()),Association=info.Association,Index=info.Index},value=p.ParameterValue}
+                            end)
+                        end
+                        target=to:CreateDynamicMaterialInstance(i,source_base,FName('None'))
+                        for _,p in ipairs(textures)do target:SetTextureParameterValueByInfo(p.info,p.value)end
+                    end
+                end
                 if not target:IsA('/Script/Engine.MaterialInstanceDynamic') then
                     target=to:CreateDynamicMaterialInstance(i,target,FName('None'))
                 end
@@ -167,7 +192,7 @@ function Fighter.appearance(renderer)
         local c=ref:get();local asset=c:GetSkinnedAsset()
         if valid(asset) and not same(c,p.Mesh) then copy(matches[asset:GetFullName():gsub('^%S+ ','')],c) end
     end
-    for _,e in ipairs(lease.equipment.components) do local part=parts[e.part];if part then copy(part.component,e.component) end end
+    for _,e in ipairs(lease.equipment.components) do local part=parts[e.part];if part then copy(part.component,e.component,true) end end
     renderer.use_native(true)
 end
 function Fighter.inspect(f)

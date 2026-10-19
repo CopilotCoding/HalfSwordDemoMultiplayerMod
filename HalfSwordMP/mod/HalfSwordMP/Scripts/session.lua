@@ -7,6 +7,8 @@ local Fighter=dofile(paths.scripts.."/fighter.lua")
 local Damage=dofile(paths.scripts.."/damage.lua")
 local Injury=dofile(paths.scripts..'/injury.lua')
 local Clothing=dofile(paths.scripts..'/clothing.lua')
+local Pause=dofile(paths.scripts..'/pause.lua')or{}
+_G.HSMPPause=Pause
 
 local Match=dofile(paths.scripts.."/match.lua")
 _G.HSMPMatch=Match
@@ -14,6 +16,7 @@ local role,connected,nonce="off",false,""
 local local_pawn,local_world
 local retiring_pawn
 local input_pawn
+local previous_remote_owner
 local frame
 local tick=0
 local last_role_record
@@ -21,12 +24,15 @@ local injury_state,injury_attacker
 local function valid(o) return o~=nil and o:IsValid() end
 local function same(a,b) return valid(a) and valid(b) and a:GetFullName()==b:GetFullName() end
 function Session.stop()
+    if _G.HSMPDropped and _G.HSMPDropped.reset then _G.HSMPDropped.reset()end
+    if Pause.reset then Pause.reset()end
     Clothing.reset()
     Fighter.destroy();Waiting.release();Round.release();Damage.stop();
     Injury.reset()
     Match.leave()
     local_pawn,local_world,retiring_pawn=nil,nil,nil
     input_pawn=nil
+    previous_remote_owner=nil
     frame=nil
     injury_state,injury_attacker=nil,nil
     local f=io.open(paths.runtime.."/frame.cfg","w");if f then f:write("OFF\n");f:close() end
@@ -74,6 +80,9 @@ local function install_spawn_hook()
 end
 function Session.capture_pawn() return local_pawn end
 function Session.round_outcome(pawn)return Round.defeated(pawn)end
+function Session.give_up()
+    return Match.playable()and Round.surrender(local_pawn)
+end
 function Session.injury_source()return Damage.injury_source()end
 function Session.sync_injury(pawn)
     if connected and Match.playable()and valid(local_pawn)and (not pawn or same(pawn,local_pawn))and _G.HSMPAvatar then
@@ -113,6 +122,7 @@ function Session.tick(pawn)
     if not valid(world) then return role end
     Match.menu(world)
     if role=="off" then return "off" end
+    if Pause.tick then Pause.tick(world)end
     if role=='join'then install_spawn_hook()end
     Round.install_hooks()
     if not Match.poll(world,pawn) then
@@ -129,6 +139,8 @@ function Session.tick(pawn)
     end
     local_world=world:GetFullName()
     if Round.poll(world,function()
+        if _G.HSMPDropped and _G.HSMPDropped.reset then _G.HSMPDropped.reset()end
+        previous_remote_owner=Fighter.owner()
         Clothing.reset()
         retiring_pawn=valid(local_pawn) and local_pawn:GetFullName() or ""
         Fighter.destroy();Waiting.release();Damage.stop();local_pawn=nil;frame=nil
@@ -188,6 +200,8 @@ function Session.after_render(renderer)
     if role=="off" or not Match.playable() or not valid(local_pawn) then return end
     local _,mesh=renderer.rendered()
     if connected and valid(mesh) then
+        if previous_remote_owner and renderer.owner()==previous_remote_owner then return end
+        previous_remote_owner=nil
         Fighter.update(local_pawn,renderer,Waiting)
         Fighter.appearance(renderer)
         local avatar=_G.HSMPAvatar
@@ -199,6 +213,7 @@ function Session.after_render(renderer)
 end
 function Session.animate(renderer)
     if role~="off" and Match.playable() and valid(local_pawn) then
+        if _G.HSMPDropped then _G.HSMPDropped.tick(local_pawn,renderer)end
         Clothing.update(local_pawn);Clothing.update(Fighter.pawn())
         Fighter.controls(local_pawn)
         Fighter.render(renderer)

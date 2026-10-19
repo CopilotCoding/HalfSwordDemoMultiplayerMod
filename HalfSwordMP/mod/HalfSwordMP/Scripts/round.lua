@@ -12,6 +12,21 @@ local retired_fades={}
 local next_scan=0
 local result_classes={'UI_KO','UI_DED','UI_Lose','UI_WIN','UI_WinScreen','UI_WinScreen_Versus'}
 local function valid(o) return o~=nil and o:IsValid() end
+local function now(pawn)
+    local ok,helpers=pcall(require,'UEHelpers')
+    if ok and helpers.GetGameplayStatics then
+        local gs=helpers.GetGameplayStatics()
+        if gs.GetRealTimeSeconds then return gs:GetRealTimeSeconds(pawn:GetWorld())end
+    end
+    return os.clock()
+end
+function Round.surrender(pawn)
+    if not valid(pawn)or pawn.DED or pawn.Health<=0 then return false end
+    Round.guard_pawn(pawn)
+    local s=guarded[pawn:GetFullName()]
+    s.defeat=s.defeat or 'gave_up';pawn['Give Up']=true
+    return true
+end
 local function block_result(widget,class)
     widget:SetRenderOpacity(0);widget:SetIsEnabled(false)
     if class=='UI_KO'or class=='UI_DED'then
@@ -29,14 +44,15 @@ function Round.guard_pawn(pawn)
             local t=pawn[field];if valid(t)then s.timelines[#s.timelines+1]=t end
         end
     end
+    local clock=now(pawn)
     if pawn.DED or pawn.Health<=0 then s.defeat='dead'
     elseif not s.defeat and pawn['Give Up']then s.defeat='gave_up'
     elseif not s.defeat then
         -- Native Force Fall briefly sets consciousness to zero, then immediately
         -- recovers. Confirm a sustained KO instead of latching that single frame.
         if pawn.Consciousness<=0 then
-            s.ko_since=s.ko_since or os.clock()
-            if os.clock()-s.ko_since>=.25 then s.defeat='unconscious'end
+            s.ko_since=s.ko_since or clock
+            if clock-s.ko_since>=.25 then s.defeat='unconscious'end
         else s.ko_since=nil end
         local function zero(field)local n=pawn[field];return type(n)=='number'and n<=0 end
         local function critical(field)local n=pawn[field];return type(n)=='number'and n<=1 end
@@ -45,13 +61,35 @@ function Round.guard_pawn(pawn)
         -- this fall, while still requiring native inability to get up.
         if not pawn.Fallen then s.critical_leg=nil
         elseif critical('Leg_R Health')or critical('Leg_L Health')then s.critical_leg=true end
+        local no_support=pawn['Get Up Any Limb Found']==false
+        local trying=pawn['Player Getting Up Pressed']==true
+        if pawn.Fallen then s.fallen_since=s.fallen_since or clock else s.fallen_since=nil end
+        local rate=pawn['Get Up Rate Interp']
+        local stalled=pawn.Fallen and trying and s.fallen_since and clock-s.fallen_since>=12
+            and type(rate)=='number'and rate<=.1
         local incapable=pawn.Fallen and (pawn['Neck Snapped']==true or zero('Consciousness 2 (Legs)')
-            or (s.critical_leg and pawn['Get Up Any Limb Found']==false))
+            or(no_support and(s.critical_leg or trying)))
         if incapable then
-            s.incapable_since=s.incapable_since or os.clock()
-            if os.clock()-s.incapable_since>=2 then s.defeat=s.defeat or 'incapacitated'end
+            s.incapable_since=s.incapable_since or clock
+            local delay=(s.critical_leg or pawn['Neck Snapped']==true or zero('Consciousness 2 (Legs)'))and 2 or 6
+            if clock-s.incapable_since>=delay then s.defeat=s.defeat or 'incapacitated'end
         else s.incapable_since=nil end
+        if stalled then s.defeat=s.defeat or 'incapacitated'end
     end
+    -- Some native downed states stop routing the G action. Poll only the own
+    -- fallen fighter, leaving normal standing surrender to the native game.
+    local session=_G.HSMPSession
+    local own=session and session.capture_pawn and session.capture_pawn()
+    if pawn.Fallen and not s.defeat and valid(own)and own:GetFullName()==key
+        and (not _G.HSMPUI or not _G.HSMPUI.is_open())then
+        local ok,helpers=pcall(require,'UEHelpers')
+        local pc
+        if ok and helpers.GetPlayerController then pc=helpers.GetPlayerController()end
+        if valid(pc)and pc:IsInputKeyDown({KeyName=FName('G')})then
+            s.give_up_since=s.give_up_since or clock
+            if clock-s.give_up_since>=3 then s.defeat='gave_up';pawn['Give Up']=true end
+        else s.give_up_since=nil end
+    else s.give_up_since=nil end
     -- Player is a native control-mode switch, not just a death-UI flag. A KO
     -- must never permanently convert the local controlled fighter into an AI.
     -- Stop exit timelines only for a latched defeat, leaving recovery alone.

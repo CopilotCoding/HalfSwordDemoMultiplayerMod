@@ -9,6 +9,7 @@ local Equipment=dofile(require("paths").scripts.."/equipment.lua")
 local Injury=dofile(require('paths').scripts..'/injury.lua')
 local Movement=dofile(require('paths').scripts..'/movement.lua')
 local Dropped=dofile(require('paths').scripts..'/dropped_weapons.lua')
+_G.HSMPDropped=Dropped
 local previous_motion
 local physical_bones,physical_mesh
 local function valid(o) return o ~= nil and o:IsValid() end
@@ -147,7 +148,7 @@ function Avatar.capture(pawn, serial,native)
     if not inventory_cache or inventory_cache.pawn ~= pawn_key then appearance_cache,shared_cache = {},{} end
     entries = {}
     local seen, count, total_bones = {[path(source)]=true},0,source:GetNumBones()
-    local function add(c)
+    local function add(c,kind)
         if not valid(c) or not c:IsA("/Script/Engine.MeshComponent") then return end
         local key = path(c)
         if seen[key] then return end
@@ -195,16 +196,19 @@ function Avatar.capture(pawn, serial,native)
         end
         count = count + 1
         local id = "part"..count
-        entries[#entries+1] = {c=c,id=id,kind=shared and "L" or skinned and "K" or "S",asset=path(asset),skinned=skinned,shared=shared}
+        entries[#entries+1] = {c=c,id=id,kind=kind or(shared and "L" or skinned and "K" or "S"),asset=path(asset),skinned=skinned,shared=shared}
     end
-    local function owner(o)
+    local function owner(o,kind)
         if dropped.names[o:GetFullName()]then return end
         local array = o:K2_GetComponentsByClass(StaticFindObject("/Script/Engine.MeshComponent"))
         if type(array) == "table" then
-            for _, c in ipairs(array) do add(c:get()) end
-        else array:ForEach(function(_, ref) add(ref:get()) end) end
+            for _, c in ipairs(array) do add(c:get(),kind) end
+        else array:ForEach(function(_, ref) add(ref:get(),kind) end) end
     end
     owner(pawn)
+    for _,field in ipairs({'Weapon Slot R 1','Weapon Slot R 2','Weapon Slot L 1','Weapon Slot L 2','Weapon Slot Back'})do
+        local o=pawn[field];if valid(o)then owner(o,'T')end
+    end
     -- Physics-constrained held items may not appear in GetAttachedActors.
     for _, property in ipairs({"Grab Component R","Grab Component L","Weapon R","Weapon L"}) do
         pcall(function()

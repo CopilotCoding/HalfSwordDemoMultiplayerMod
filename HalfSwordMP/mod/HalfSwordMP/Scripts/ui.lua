@@ -41,6 +41,7 @@ function UI.set_open(value)
     local library=StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
     if not valid(pc) or not valid(library) or not valid(widget) or not valid(panel) or not valid(address) then return end
     open=value
+    if open and _G.HSMPPause then _G.HSMPPause.close(false)end
     panel:SetVisibility(open and 0 or 1)
     if open then
         previous_cursor=pc.bShowMouseCursor;pc.bShowMouseCursor=true
@@ -106,7 +107,7 @@ local function create()
     button(canvas,"Multiplayer  [F5]",22,18,250,function() UI.set_open(not open) end)
     local border=make("Border")
     border:SetBrushColor({R=.025,G=.035,B=.05,A=.98})
-    place(canvas,border,22,70,640,550)
+    place(canvas,border,22,70,640,600)
     panel=border
     local content=make("CanvasPanel");border:AddChild(content)
     place(content,label("HALF SWORD  /  MULTIPLAYER",24),24,20,590,36)
@@ -133,12 +134,15 @@ local function create()
         if request("restart_round")then status:SetText(text("Starting the next multiplayer round..."))end
     end)
     restart:SetVisibility(1);restart:SetIsEnabled(false)
-    automatic=place(content,make("CheckBox"),24,344,28,30)
+    button(content,'Give up this round',24,335,584,function()
+        if _G.HSMPSession and _G.HSMPSession.give_up()then UI.set_open(false)end
+    end)
+    automatic=place(content,make("CheckBox"),24,394,28,30)
     automatic:SetIsChecked(last_auto)
-    place(content,label("Automatic updates from the host",16),66,344,500,30)
-    button(content,"Check for update",24,392,282,function() request("check_updates") end)
-    button(content,"Apply update & restart",326,392,282,function() request("apply_update") end)
-    place(content,label("Enter match keeps your selected fighter and equipment.\nKO, death or give up: reset in 3 seconds. F5: menu.",15),24,460,590,62)
+    place(content,label("Automatic updates from the host",16),66,394,500,30)
+    button(content,"Check for update",24,442,282,function() request("check_updates") end)
+    button(content,"Apply update & restart",326,442,282,function() request("apply_update") end)
+    place(content,label("Selected gear returns each round. E / Q: pick up enemy drops.\nHold G to give up, including while downed. F5: menu.",15),24,510,590,62)
     widget:AddToViewport(10000)
     UI.set_open(open)
 end

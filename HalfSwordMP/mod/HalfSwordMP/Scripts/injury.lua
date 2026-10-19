@@ -15,7 +15,7 @@ function Injury.capture(pawn,lines,owner,attacker,revision,outcome)
  for key,field in pairs(Injury.fields)do
   local value=pawn[field];if type(value)=='boolean'then value=value and 1 or 0 end
   if outcome=='dead'and key=='health'then value=0
-  elseif outcome=='unconscious'and key=='consciousness'then value=0 end
+  elseif (outcome=='unconscious'or outcome=='incapacitated')and key=='consciousness'then value=0 end
   if type(value)=='number'and value==value and math.abs(value)<=10000000 then
    lines[#lines+1]=string.format('V|hit_%s|%.5f',key,value)
   end

@@ -7,7 +7,7 @@ injury events represented on their PC. The mod adds an in-game multiplayer
 panel, shared rounds, a host-only restart button and optional updates from the
 host.
 
-**Current build: 0.10.9 · Protocol: 16 · Players: 2**
+**Current build: 0.10.10 · Protocol: 17 · Players: 2**
 
 [Install](#install) · [Play](#play) · [Direct IP](#direct-ip) ·
 [Updates](#optional-updates) · [Development summary](#development-summary)
@@ -24,16 +24,51 @@ Both peers use the same arena coordinates. The guest's fighter is constructed at
 the opposite native spawn; world geometry and blood positions are not mirrored.
 The other fighter follows measured poses instead of independently replaying
 controls. Native KO/death screens remain suppressed and selected gear is retained
-across shared resets. Both PCs must run this version (protocol 16).
+across shared resets. Both PCs must run this version (protocol 17).
 
 ## Current build and validation
+
+0.10.10 saves the actual selected clothing colours, shield material/pattern and
+all seven native weapon slots, including sheathed sidearms. Native respawn can
+reroll cosmetic values; the saved construction and appearance are restored after
+setup finishes. Weapon material copying also preserves preset shield patterns
+while keeping the receiver's native wound textures.
+
+Enemy-dropped weapons can now be picked up with the normal **E/Q** controls
+when nearby and that hand is free. The originating peer validates the transfer;
+the receiving game uses native hand setup to create a usable weapon. A transferred
+drop disappears from its previous location on both peers. Ground movement still
+comes from the originating game's simulation, rather than one shared physics world.
+
+The panel adds **Give up this round**, including while downed. Holding **G** for
+three seconds also works as a fallback while downed. KO/death and confirmed
+incapacity end the round; resting after a recoverable fall does not. Failed
+recovery attempts are checked over time. Escape now toggles one native pause
+menu, and Resume retires its input callbacks. Match recovery keeps the selected
+loadout, rejects previous-life opponents and retries transient renderer failures.
+
+Validation: **133 automated checks passed**. In two visible native game windows,
+three successive resets (KO, unrecoverable downing and downed surrender) retained
+the exact sampled weapon construction, armour classes, clothing colours, shield
+materials and sidearms. Each opponent's sampled clothing and hand appearance
+matched its owner. Both opponents returned, with movement/look input enabled.
+A one-shot renderer failure recovered without another reset. Repeated native
+Escape/Resume tests left zero pause layers and restored input on both peers.
+The user confirmed enemy pickup and the final appearance in play.
+
+Unused input capture/transmission and redundant scans/material work have been
+removed. This is not a measured laptop FPS or Internet latency guarantee; remaining
+client lag needs testing on the second PC. Update **both PCs** for protocol 17.
+
+### Previous release checks
 
 0.10.9 keeps tracking each fighter's native weapons after they are dropped.
 The other PC displays their individual mesh parts, materials, sizes and measured
 world transforms, including while the native opponent is active. Picking a weapon
 back up removes its dropped representation; a new fighter life clears old drops.
 The owning game still simulates the dropped weapon. This adds visibility and pose
-replication, not shared pickup ownership or full dropped-object collision physics.
+replication; shared pickup ownership was added in 0.10.10. Full shared ground-object
+physics is not implemented.
 Protocol 16 requires updating both PCs.
 
 The 0.10.9 suite passed **125 checks**. In two visible native game windows, the
@@ -143,7 +178,9 @@ motion are suppressed while multiplayer owns the match. This targets
 
 Hold **G** to give up using the game's native surrender action. Its give-up UI
 is preserved; surrender ends the shared round. The single-player death screen's
-return-to-menu action stays suppressed.
+return-to-menu action stays suppressed. While downed, hold G for three seconds
+or use **Give up this round** in F5. To collect an enemy's dropped weapon, approach
+it and use E/Q with a free hand.
 
 Each reset runs the native Duel card handler again with the selected fighter
 rank/team restored. KO is latched until the coordinator resets both PCs, so native
@@ -154,7 +191,8 @@ when closing the panel. Returning to the main menu clears the old match.
 
 ## What is synchronized
 
-- Native input events, held keys and view direction travel at up to 30 updates/s.
+- Controls run natively on each owner's PC. Opponents follow measured poses;
+  this mode does not send an unused duplicate input stream.
 - Root position, physical body-bone poses, weapon/query-helper transforms, worn
   equipment classes, mesh/material appearance, owner identity,
   vitals and native injury events target 30 updates/s. Actual capture rate is
@@ -196,8 +234,8 @@ reads are tolerated instead of repeatedly destroying and rebuilding the opponent
 
 Network latency still delays remote poses. There is no rollback or latency compensation.
 Exact detached-limb, constraint/impalement and wound-texture matching is not
-established. Dropped weapons are visible on both peers; cross-peer pickup
-ownership and fully shared dropped-item physics remain unimplemented.
+established. Dropped weapons are visible on both peers and cross-peer pickup
+ownership is implemented. Fully shared dropped-item physics is not implemented.
 Physics interactions and Internet latency require
 further testing across hardware and network conditions; the user has confirmed
 successful Internet play with very little lag in their session. Use the same

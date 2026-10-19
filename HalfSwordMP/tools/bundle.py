@@ -68,9 +68,12 @@ def package_files(data: bytes) -> dict[str,bytes]:
     required.add('mod/HalfSwordMP/Scripts/injury.lua')
     required.add('mod/HalfSwordMP/Scripts/movement.lua')
     required.add('mod/HalfSwordMP/Scripts/dropped_weapons.lua')
+    required.add('tools/dropped.py')
     required.add('mod/HalfSwordMP/Scripts/replica.lua')
     required.add('mod/HalfSwordMP/Scripts/rig_math.lua')
     required.add('mod/HalfSwordMP/Scripts/native_sever.lua')
     required.add('mod/HalfSwordMP/Scripts/clothing.lua')
+    required.add('mod/HalfSwordMP/Scripts/cosmetics.lua')
+    required.add('mod/HalfSwordMP/Scripts/pause.lua')
     if not required<=result.keys():raise ValueError("Incomplete update package")
     return result

@@ -16,7 +16,10 @@ local colors='MemberVar_44_45_FF627FBE4FE882E7D295BFA0BB6716C0'
 local coat='COAInt_63_593665BE4EF020F95F7D1A92564C1239'
 local function valid(o)return o~=nil and o:IsValid()end
 function Parts.capture(w,slot,lines)
- local s=w['Str Weapon Parts'];local captured={}
+ return Parts.capture_struct(w['Str Weapon Parts'],slot,lines)
+end
+function Parts.capture_struct(s,slot,lines)
+ local captured={}
  -- Preset weapons such as fists may not use a modular saved construction.
  if not valid(s[assets.grip])then return end
  for key,field in pairs(assets)do
@@ -32,6 +35,27 @@ function Parts.capture(w,slot,lines)
  s[colors]:ForEach(function(k,v)local c=v:get();captured[#captured+1]=table.concat({'Y',slot,k:get(),c.R,c.G,c.B,c.A},'|')end)
  captured[#captured+1]=table.concat({'O',slot,s[coat]},'|')
  table.sort(captured);for _,line in ipairs(captured)do lines[#lines+1]=line end
+end
+function Parts.snapshot(s)
+ local class=s.WeaponBPClass_51_5C40F9BE43F7897FB12AACA75C2AD066
+ local result={class=valid(class)and class:GetFullName():gsub('^%S+ ','')or'-'}
+ local lines={};Parts.capture_struct(s,'saved',lines)
+ for _,line in ipairs(lines)do
+  local row={};for v in line:gmatch('[^|]+')do row[#row+1]=v end
+  Parts.read(result,row)
+ end
+ return result
+end
+function Parts.restore_struct(s,value)
+ local class
+ if value.class~='-'then
+  class=StaticFindObject(value.class)
+  if not valid(class)then LoadAsset(value.class:match('^(.+)%.[^%.]+$'));class=StaticFindObject(value.class)end
+  assert(valid(class),'Saved weapon class unavailable')
+ end
+ s.WeaponBPClass_51_5C40F9BE43F7897FB12AACA75C2AD066=class
+ if value.construction then Parts.apply({['Str Weapon Parts']=s},value.construction)end
+ return s
 end
 function Parts.read(w,row)
  local tag=row[1]

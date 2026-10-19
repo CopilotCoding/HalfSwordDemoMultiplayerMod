@@ -2,6 +2,7 @@
 local Equipment={}
 local Assets=dofile(require("paths").scripts.."/assets.lua")
 local Parts=dofile(require("paths").scripts.."/weapon_parts.lua")
+local Cosmetics=dofile(require('paths').scripts..'/cosmetics.lua')
 local function valid(o)return o~=nil and o:IsValid()end
 local function path(o)return o:GetFullName():gsub("^%S+ ","")end
 local boolean={['Double Edged']=true,NoStab=true,Shield=true}
@@ -38,9 +39,11 @@ function Equipment.capture(pawn,lines,geometry,part_id)
     end
     local first=#lines+1
     lines[#lines+1]="GEAR|1"
+    local seen_weapons={}
     for _,slot in ipairs({{"right","Weapon R"},{"left","Weapon L"}}) do
         local w=pawn[slot[2]]
-        if valid(w) and allowed(path(w:GetClass()),"weapon") then
+        if valid(w) and not seen_weapons[w:GetFullName()]and allowed(path(w:GetClass()),"weapon") then
+            seen_weapons[w:GetFullName()]=true
             lines[#lines+1]="W|"..slot[1].."|"..path(w:GetClass())
             Parts.capture(w,slot[1],lines)
             for _,key in ipairs(properties) do
@@ -106,6 +109,12 @@ local armor_field="Armor_84_A1BA4DD44FD262BCA53B9DACF03CDF04"
 local slots_field="ArmorinSlots_31_702A9C5C40C7F4335C6B4687EC09936A"
 local class_field="ArmorBPClass_2_0A22459840BF9E6989DFA4BA6CFED1D3"
 local color_fields={"Color1_5_5527FC7C442DCF594A4DA5BA8D94351F","Color2_7_1FF790D94C8CD95FF2D76183E7102E1B","Color3_9_D8B5A08742A87F5492F8138A4F686141"}
+local weapons_field='Weapons_83_06F076E247B54D0D9942B383323C1968'
+local loadout_slots={'WeaponHandR_2_64D3388F445655CA2E9E60B639016D17','WeaponHandL_4_4BF5616F480598D39F54058D5181EB86',
+ 'WeaponSlotR1_6_140F311C4B659EE501761B8D99781B20','WeaponSlotR2_8_8B0CA70A4477398EB3B1E58EBB1AD2DC',
+ 'WeaponSlotL1_10_908E8A984A1C041B0CC6238D804CEB60','WeaponSlotL2_12_EF7AA9044E150C11545E349E5AD7C2E0',
+ 'WeaponBack_14_2CBE21CA47095EF150DD5791D72AC8C9'}
+local live_slots={'Weapon R','Weapon L','Weapon Slot R 1','Weapon Slot R 2','Weapon Slot L 1','Weapon Slot L 2','Weapon Slot Back'}
 armor_config=function(pawn)
     local result={}
     pawn["Load Equipment"][armor_field][slots_field]:ForEach(function(k,v)
@@ -124,7 +133,18 @@ local function set_armor(pawn,entries,load)
 end
 function Equipment.save_loadout(pawn)
     local rows={}
+    captured=nil -- A selected loadout snapshot must include current dyes immediately.
     Equipment.capture(pawn,rows,{id=function()return nil end},function()return nil end)
+    local full={}
+    local weapon_cosmetics={}
+    for i,field in ipairs(loadout_slots)do
+        local actor=pawn[live_slots[i]]
+        if valid(actor)then
+            full[field]=Parts.snapshot(actor['Str Weapon Parts']);full[field].class=path(actor:GetClass())
+            weapon_cosmetics[live_slots[i]]=Cosmetics.capture(actor,true)
+        else full[field]=Parts.snapshot(pawn['Load Equipment'][weapons_field][field])end
+    end
+    local signature={};for _,line in ipairs(rows)do signature[#signature+1]=line end;table.sort(signature)
     return {value=Equipment.read((function()
         local result={}
         for _,line in ipairs(rows)do
@@ -132,12 +152,20 @@ function Equipment.save_loadout(pawn)
             result[#result+1]=row
         end
         return result
-    end)()),armor=armor_config(pawn)}
+    end)()),armor=armor_config(pawn),full=full,signature=table.concat(signature,'\n'),cosmetics=Cosmetics.capture(pawn),weapon_cosmetics=weapon_cosmetics}
 end
 function Equipment.restore_loadout(pawn,snapshot)
     local current=Equipment.save_loadout(pawn)
-    if current.value.signature==snapshot.value.signature then return end
-    Equipment.create_fighter(pawn,snapshot.value,{})
+    -- Classes alone do not describe clothing colours, modular dyes or sidearms.
+    -- Apply the saved native weapon structure before rebuilding the sheath slots.
+    if snapshot.full then
+        pawn['Event Clear Sheathed Weapon Slots'](pawn)
+        local config=pawn['Load Equipment']
+        for _,field in ipairs(loadout_slots)do Parts.restore_struct(config[weapons_field][field],snapshot.full[field])end
+        pawn['Load Equipment']=config
+        pawn['Event Add Sheathed Weapon'](pawn)
+    end
+    if current.signature~=snapshot.signature then Equipment.create_fighter(pawn,snapshot.value,{})end
     -- Preserve the selected native armor colors as well as its classes.
     local colors={};for _,a in ipairs(snapshot.armor)do colors[a.slot]=a.value end
     local armor={}
@@ -150,6 +178,40 @@ function Equipment.restore_loadout(pawn,snapshot)
         armor[#armor+1]={slot=a[1],value=value}
     end
     set_armor(pawn,armor,true)
+    Equipment.restore_cosmetics(pawn,snapshot)
+end
+function Equipment.restore_cosmetics(pawn,snapshot)
+    Cosmetics.restore(pawn,snapshot.cosmetics)
+    -- Native hand/sheath setup can randomize a construction dye while spawning.
+    -- Keep the saved description aligned with the materials restored below,
+    -- without rerunning setup or changing an existing hand constraint.
+    for i,field in ipairs(loadout_slots)do
+        local actor=pawn[live_slots[i]]
+        if valid(actor)and snapshot.full and snapshot.full[field]then
+            Parts.restore_struct(actor['Str Weapon Parts'],snapshot.full[field])
+        end
+    end
+    for field,appearance in pairs(snapshot.weapon_cosmetics or{})do
+        local actor=pawn[field];if valid(actor)then Cosmetics.restore(actor,appearance,true)end
+    end
+end
+-- Native hand setup owns construction, collision, grip and weapon damage.
+function Equipment.pickup(pawn,description,hand)
+    assert(hand=='right'or hand=='left','Invalid pickup hand')
+    local class=native_class(description.class,'weapon');assert(valid(class),'Unavailable pickup weapon')
+    local p=pawn.Mesh:GetSocketLocation(FName(hand=='right'and'hand_r'or'hand_l'))
+    local template=pawn:GetWorld():SpawnActor(class,{X=p.X,Y=p.Y,Z=p.Z},{Pitch=0,Yaw=0,Roll=0})
+    assert(valid(template),'Native pickup spawn failed')
+    local ok,actor=pcall(function()
+        local construction=Parts.apply(template,description.construction)
+        local method=hand=='right'and'Set Up Right Hand Weapon'or'Set Up Left Hand Weapon'
+        pawn[method](pawn,class,description.construction and nil or template,false,true,construction)
+        local item=pawn[hand=='right'and'Weapon R'or'Weapon L']
+        assert(valid(item),'Native pickup hand setup failed');return item
+    end)
+    if not ok or template:GetFullName()~=actor:GetFullName()then template:K2_DestroyActor()end
+    if not ok then error(actor)end
+    return actor
 end
 local function modifier_component(pawn)
     local t=pawn.Mesh:GetSocketTransform(FName("Root"),0)
