@@ -25,9 +25,12 @@ function Replica.create(pawn,equipment)
  pawn.CharacterMovement:StopMovementImmediately();pawn.CharacterMovement:SetComponentTickEnabled(false)
  return state
 end
-local function target(control,name,t)
+local function target(control,entry,t)
+ local old=entry.target
+ if old then local same=true;for i=1,10 do if old[i]~=t[i]then same=false;break end end;if same then return end end
  local rotation=Math.rotator(t)
- control:SetBodyModifierKinematicTarget(name,{X=t[1],Y=t[2],Z=t[3]},rotation,true)
+ control:SetBodyModifierKinematicTarget(entry.name,{X=t[1],Y=t[2],Z=t[3]},rotation,true)
+ entry.target=t
 end
 function Replica.clear_weapons(state)
  if not state or not valid(state.control)then return end
@@ -42,7 +45,7 @@ function Replica.update(state,frame)
  p:K2_SetActorLocationAndRotation({X=r[1],Y=r[2],Z=r[3]},{Pitch=r[4],Yaw=r[5],Roll=r[6]},false,{},true)
  for _,entry in ipairs(state.bones)do
   local t=frame.bones['body|'..entry.bone]
-  if t then target(c,entry.name,t)end
+  if t then target(c,entry,t)end
  end
  for id,t in pairs(frame.colliders)do
   local component=state.equipment.by_geometry[id]
@@ -57,7 +60,7 @@ function Replica.update(state,frame)
     c:SetBodyModifierUpdateKinematicFromSimulation(name,true)
     entry={name=name,component=component};state.weapons[id]=entry
    end
-   target(c,entry.name,t)
+   target(c,entry,t)
    local mode=frame.collision_modes and frame.collision_modes[id]or 3
    if entry.mode~=mode then c:SetBodyModifierCollisionType(entry.name,mode);entry.mode=mode end
    else

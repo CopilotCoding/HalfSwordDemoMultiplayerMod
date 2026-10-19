@@ -4,7 +4,7 @@ HalfSwordMP brings experimental two-player fights to Half Sword Demo. Select
 your fighter, host a match and have a friend connect directly by IP. Each person
 controls their own native fighter, with the other player's body, equipment and
 injury events represented on their PC. The mod adds an in-game multiplayer
-panel, shared rounds, a host-only restart button and optional updates from the
+panel, shared rounds, a shared restart button and optional updates from the
 host.
 
 **Current build: 0.10.11 · Protocol: 17 · Players: 2**
@@ -24,15 +24,35 @@ Both peers use the same arena coordinates. The guest's fighter is constructed at
 the opposite native spawn; world geometry and blood positions are not mirrored.
 The other fighter follows measured poses instead of independently replaying
 controls. Native KO/death screens remain suppressed and selected gear is retained
-across shared resets. Both PCs must run this version (protocol 17).
+across shared resets. Both PCs must run this version (protocol 18).
 
 ## Current build and validation
 
-0.10.11 keeps the native **hold G** surrender meter. You can start it at any
-time; releasing G before it fills cancels. Beginning a hold is not a completed
-surrender and does not switch the fighter into AI control. Only a filled meter
-ends the round, and only the subsequent single-player fade/menu exit is retired.
-The instant F5 surrender button and custom three-second G timer have been removed.
+0.10.12 checks that the saved armour slots and clothing meshes are present
+before marking a respawn ready. Missing armour is retried through native setup;
+weapon-only changes still preserve the existing clothing and wounds. Match entry
+also waits for the native preview's configured armour slots before saving it.
+
+**Restart round is available to both players.** The client's request travels to
+the host, which issues one shared reset. Requests repeat until acknowledged by a
+new round, and stale requests cannot reset a later round. During respawn the
+button waits six seconds, then permits another shared attempt if setup stalls.
+
+Surrender keeps the native **hold G** meter, available while healthy or downed;
+release cancels. The mod discovers the widget created by the native G handler,
+including cooked ticks that bypass the event-graph hook. It does not construct a
+replacement meter or complete surrender from the native hold-start flag. Old
+widgets are retired at the next life. A full meter starts the shared reset after
+0.25 seconds; KO/death retains the three-second countdown. Native respawn still
+needs time to load the fighters and their saved gear.
+
+Pause and surrender-widget changes are deferred out of native Blueprint hooks.
+F5 preserves native settings below it and restores their focus when closed.
+Escape over settings retires the extra pause layer and uses the native Back
+button. Opening a menu cancels a held surrender. Opponent maintenance also
+repairs hidden body render flags without rebuilding clothes or injuries.
+Interpolation reuses samples from the same frame and skips unchanged native
+physics targets; the pose delivery target remains 30 Hz.
 
 Returning to the main menu now leaves the current match and clears its saved
 selection. Change your fighter/gear there, then choose **Enter multiplayer match**
@@ -58,15 +78,18 @@ edges in downed states are routed to the native handlers, preserving the game's
 meter. Escape toggles one native pause menu, and Resume retires its input callbacks.
 Round setup rejects previous-life opponents and retries transient renderer failures.
 
-Validation: **136 automated checks passed**. In the 0.10.11 visible host/client
-test, both healthy fighters started and cancelled native G holds without ending
-the round. The hurt prompt survived health regenerating above 50 while a leg
-remained injured. Each peer then completed its native meter; partial progress
-kept player identity and control direction, and both opponents returned after
-the shared reset and stayed present beyond the old fade delay. The visible
-return-to-menu check was interrupted by Escape and did not complete; automated
-checks verify that a visible main menu stays open until explicit re-entry and
-that leaving clears the old loadout.
+Validation: **144 automated checks passed**, including client requests over
+real UDP, duplicate resets, a stalled respawn retry, incomplete armour, native
+hold/cancel discovery, settings focus and widget lifetimes. In two visible native
+game windows, both fighters cancelled partial holds; healthy host and injured,
+downed client holds then completed with unchanged control yaw and shared resets.
+Across repeated resets, both sampled local outfits had all six selected armour
+slots and the expected clothing meshes, and both opponents returned. A client
+restart command reset both games. Deliberately hidden opponent bodies recovered
+on both peers, and each game completed 100 F5 open/close cycles without a crash.
+Computer Use was stopped with Escape before a visual graphics-settings check
+could finish. That interaction has automated coverage, but is not claimed as
+verified in the running game. No numerical laptop FPS improvement is claimed.
 
 In the preceding 0.10.10 visible native game windows,
 three successive resets (KO, unrecoverable downing and downed surrender) retained
@@ -79,7 +102,7 @@ The user confirmed enemy pickup and the final appearance in play.
 
 Unused input capture/transmission and redundant scans/material work have been
 removed. This is not a measured laptop FPS or Internet latency guarantee; remaining
-client lag needs testing on the second PC. Update **both PCs** for protocol 17.
+client lag needs testing on the second PC. Update **both PCs** for protocol 18.
 
 ### Previous release checks
 
@@ -186,16 +209,17 @@ remain local in `runtime/preferences.json`.
    a changed tutorial preference. No preliminary single-player fight is needed.
 5. Close the panel with F5 and use the game's normal controls.
 
-The host also has a **Restart round** button beside **Enter multiplayer match**.
-It immediately starts the next shared round using the normal native reset and
-retains the selected fighter/equipment. It is enabled once both fighters are in
-the match and is disabled while a reset is already running. Guests do not see
-the button and cannot request a shared reset.
+Both players have a **Restart round** button beside **Enter multiplayer match**.
+The host coordinates each shared reset and retains the selected fighter/equipment.
+The button is disabled during normal respawn; if that takes over six seconds it
+becomes available for a retry. A client request remains pending until the host
+advances the round. Both players must use protocol 18.
 
-Confirmed unconsciousness, sustained native incapacity, death and giving up trigger a three-second restart coordinated
-by the host. Both PCs use the native arena reset. Native result cards and KO slow
-motion are suppressed while multiplayer owns the match. This targets
-`Arena_Cutting_Map`.
+Confirmed unconsciousness, sustained native incapacity and death trigger a
+three-second restart coordinated by the host. A completed native surrender
+meter uses a 0.25-second countdown. Both PCs use the native arena reset; loading
+and restoring equipment add startup time. Native result cards and KO slow motion
+are suppressed while multiplayer owns `Arena_Cutting_Map`.
 
 Hold **G** to give up using the game's native surrender action. Its give-up UI
 is preserved; surrender ends the shared round. The single-player death screen's

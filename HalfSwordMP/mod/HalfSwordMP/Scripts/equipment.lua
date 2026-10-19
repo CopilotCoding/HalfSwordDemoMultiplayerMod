@@ -195,6 +195,29 @@ function Equipment.restore_cosmetics(pawn,snapshot)
         local actor=pawn[field];if valid(actor)then Cosmetics.restore(actor,appearance,true)end
     end
 end
+function Equipment.loadout_present(pawn,snapshot)
+    local actual={}
+    pawn.ArmorSlots_1:ForEach(function(k,v)local class=v:get();if valid(class)then actual[k:get()]=path(class)end end)
+    for _,entry in ipairs(snapshot.value.armor)do if actual[entry[1]]~=entry[2]then return false end end
+    local meshes=Cosmetics.capture(pawn)
+    for asset in pairs(snapshot.cosmetics or{})do if not meshes[asset]then return false end end
+    return true
+end
+function Equipment.selection_ready(pawn)
+    -- A preview can permit Start before its asynchronous armour meshes exist.
+    -- Compare the native selection to the worn slots before taking our snapshot.
+    local worn={}
+    pawn.ArmorSlots_1:ForEach(function(k,v)local c=v:get();if valid(c)then worn[k:get()]=path(c)end end)
+    for _,entry in ipairs(armor_config(pawn))do
+        local class=entry.value[class_field]
+        if valid(class)and worn[entry.slot]~=path(class)then return false end
+    end
+    return true
+end
+function Equipment.restore_armor(pawn,snapshot)
+    set_armor(pawn,snapshot.armor,true)
+    Equipment.restore_cosmetics(pawn,snapshot)
+end
 -- Native hand setup owns construction, collision, grip and weapon damage.
 function Equipment.pickup(pawn,description,hand)
     assert(hand=='right'or hand=='left','Invalid pickup hand')

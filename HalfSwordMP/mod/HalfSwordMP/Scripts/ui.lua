@@ -41,7 +41,8 @@ function UI.set_open(value)
     local library=StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
     if not valid(pc) or not valid(library) or not valid(widget) or not valid(panel) or not valid(address) then return end
     open=value
-    if open and _G.HSMPPause then _G.HSMPPause.close(false)end
+    -- Keep native settings alive underneath F5; restore their focus on close.
+    -- Removing focused native widgets here can invalidate Slate's focus path.
     panel:SetVisibility(open and 0 or 1)
     if open then
         previous_cursor=pc.bShowMouseCursor;pc.bShowMouseCursor=true
@@ -50,6 +51,7 @@ function UI.set_open(value)
         local p=helpers.GetPlayer()
         local in_fight=valid(p) and p:GetClass():GetFName():ToString()=="Willie_BP_C"
         pc.bShowMouseCursor=not in_fight
+        if _G.HSMPPause and _G.HSMPPause.restore_focus()then return end
         if in_fight then
             library:SetInputMode_GameOnly(pc,true)
             p:EnableInput(pc);pc:ResetIgnoreMoveInput();pc:ResetIgnoreLookInput()
@@ -168,7 +170,7 @@ function UI.tick()
             local values={};for v in line:gmatch("[^|\r\n]+") do values[#values+1]=v end
             if values[1]=="HSUISTATE1" and tonumber(values[8]) and math.abs(os.time()-tonumber(values[8]))<4 then
                 companion_time=tonumber(values[8])
-                restart:SetVisibility(values[9]=='host'and 0 or 1)
+                restart:SetVisibility((values[9]=='host'or values[9]=='join')and 0 or 1)
                 restart:SetIsEnabled(values[10]=='1')
                 status:SetText(text(values[2] or "Offline"))
                 local enabled=values[3]=="1"

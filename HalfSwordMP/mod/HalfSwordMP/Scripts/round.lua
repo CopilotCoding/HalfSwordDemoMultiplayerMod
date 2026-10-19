@@ -11,6 +11,8 @@ local guarded={}
 local retired_fades={}
 local next_scan=0
 local surrender_widgets={}
+local owned_huds,ui_queue={},{}
+local retired_surrender={}
 local result_classes={'UI_KO','UI_DED','UI_Lose','UI_WIN','UI_WinScreen','UI_WinScreen_Versus'}
 local function valid(o) return o~=nil and o:IsValid() end
 local function now(pawn)
@@ -38,10 +40,23 @@ local function block_result(widget,class)
 end
 local function retire_surrender(widget)
     if not valid(widget)then return end
+    retired_surrender[widget:GetFullName()]=true
     widget:CancelLatentActions();widget:StopAllAnimations();widget.TickFrequency=1
     widget:SetRenderOpacity(0);widget:SetIsEnabled(false);widget:RemoveFromParent()
 end
+function Round.queue_ui(kind,widget)
+    if valid(widget)then ui_queue[kind..widget:GetFullName()]={kind,widget}end
+end
+function Round.ui_tick()
+    local queued=ui_queue;ui_queue={}
+    for _,entry in pairs(queued)do if valid(entry[2])then
+        if entry[1]=='prompt'then Round.keep_surrender_prompt(entry[2])else Round.keep_surrender_meter(entry[2])end
+    end end
+    local own=_G.HSMPSession and _G.HSMPSession.capture_pawn()
+    if valid(own)and _G.HSMPSession.in_match()then Round.guard_pawn(own)end
+end
 function Round.keep_surrender_meter(widget)
+    if retired_surrender[widget:GetFullName()]then return end
     local session=_G.HSMPSession
     if not session or not session.owns_arena()then return end
     local own=session.capture_pawn and session.capture_pawn()
@@ -53,6 +68,11 @@ function Round.keep_surrender_meter(widget)
         retire_surrender(widget);return
     end
     local state=guarded[own:GetFullName()]
+    if state then
+        if valid(state.meter)and state.meter:GetFullName()~=widget:GetFullName()
+            and state.meter:IsInViewport()and state.meter.TickFrequency~=1 then retire_surrender(widget);return end
+        state.meter=widget
+    end
     if (state and state.defeat=='gave_up')or widget['Hold Meter']>=1 then
         Round.surrender(own)
         -- Keep the native meter running until it fills. Only its completed
@@ -79,9 +99,11 @@ function Round.keep_surrender_prompt(widget)
     local own=session.capture_pawn and session.capture_pawn()
     local master=widget['My Player']
     if not valid(own)or not valid(master)or master:GetFullName()~=own:GetFullName()then return end
+    owned_huds[widget:GetFullName()]=widget
     local state=guarded[own:GetFullName()]
     local prompt=widget.TextHurt
-    if not state or state.defeat or not valid(prompt)then return end
+    if not state or not valid(prompt)then return end
+    if state.defeat then prompt:SetVisibility(1);return end
     if not state.prompt_hurt and not prompt:IsVisible()then return end
     if not badly_hurt(own)then state.prompt_hurt=nil;return end
     -- Native HUD visibility can switch off when one regenerating value crosses
@@ -102,7 +124,6 @@ function Round.guard_pawn(pawn)
     end
     local clock=now(pawn)
     if pawn.DED or pawn.Health<=0 then s.defeat='dead'
-    elseif not s.defeat and pawn['Give Up']and pawn['Give Up 2 (Temp)']==true and Round.can_surrender(pawn)then s.defeat='gave_up'
     elseif not s.defeat then
         -- Native Force Fall briefly sets consciousness to zero, then immediately
         -- recovers. Confirm a sustained KO instead of latching that single frame.
@@ -136,21 +157,42 @@ function Round.guard_pawn(pawn)
     -- to the same native handlers; the native widget still owns its hold meter.
     local session=_G.HSMPSession
     local own=session and session.capture_pawn and session.capture_pawn()
-    if Round.can_surrender(pawn)and not s.defeat and valid(own)and own:GetFullName()==key
-        and (not _G.HSMPUI or not _G.HSMPUI.is_open())then
+    if Round.can_surrender(pawn)and not s.defeat and valid(own)and own:GetFullName()==key then
         local ok,helpers=pcall(require,'UEHelpers')
         local pc
         if ok and helpers.GetPlayerController then pc=helpers.GetPlayerController()end
-        if valid(pc)and not s.routing_g then
-            local held=pc:IsInputKeyDown({KeyName=FName('G')})
-            if held and not s.g_held and not pawn['Give Up']then
-                s.routing_g=true;s.routed_g=true
-                pawn:InpActEvt_G_K2Node_InputKeyEvent_5({KeyName=FName('G')})
-                s.routing_g=false
-            elseif not held and s.routed_g then
-                s.routing_g=true;s.routed_g=false
-                pawn:InpActEvt_G_K2Node_InputKeyEvent_6({KeyName=FName('G')})
-                s.routing_g=false
+        if valid(pc)and not s.routing_g and s.input_frame~=clock then
+            s.input_frame=clock
+            local modal=_G.HSMPPause and _G.HSMPPause.modal()
+            local held=(not _G.HSMPUI or not _G.HSMPUI.is_open())and not valid(modal)
+                and pc:IsInputKeyDown({KeyName=FName('G')})
+            if held then
+                s.g_hold_since=s.g_hold_since or clock
+                if valid(s.meter)and(not s.meter:IsInViewport()or s.meter.TickFrequency==1)then s.meter=nil end
+                if not s.g_held and not pawn['Give Up']then
+                    s.routing_g=true;pawn:InpActEvt_G_K2Node_InputKeyEvent_5({KeyName=FName('G')});s.routing_g=false
+                end
+                if not valid(s.meter)and clock>=(s.meter_scan or 0)then
+                    s.meter_scan=clock+.1
+                    -- Cooked widget ticks can bypass ExecuteUbergraph hooks.
+                    -- Discover the widget made by the native G handler instead
+                    -- of constructing a second, incompletely initialized meter.
+                    for _,w in ipairs(FindAllOf('UI_GiveUp_C')or{})do
+                        local master=valid(w)and w['My Master (Willie)']
+                        if valid(w)and w:IsInViewport()and w.TickFrequency~=1 and not retired_surrender[w:GetFullName()]
+                            and valid(master)and master:GetFullName()==key then s.meter=w;break end
+                    end
+                end
+                if valid(s.meter)then pawn['Give Up']=true;Round.keep_surrender_meter(s.meter)
+                elseif clock>=(s.g_retry or s.g_hold_since+.5)then
+                    s.g_retry=clock+.5;pawn['Give Up']=false;pawn['Give Up 2 (Temp)']=false
+                    s.routing_g=true;pawn:InpActEvt_G_K2Node_InputKeyEvent_5({KeyName=FName('G')});s.routing_g=false
+                end
+            elseif s.g_held or valid(s.meter)then
+                s.routing_g=true;pawn:InpActEvt_G_K2Node_InputKeyEvent_6({KeyName=FName('G')});s.routing_g=false
+                pawn['Give Up']=false;pawn['Give Up 2 (Temp)']=false
+                if valid(s.meter)then retire_surrender(s.meter)end
+                s.meter=nil;s.g_hold_since=nil;s.g_retry=nil;s.meter_scan=nil
             end
             s.g_held=held
         end
@@ -197,7 +239,7 @@ function Round.install_hooks()
             end)}
         end
     end
-    _G.HSMPSurrenderPromptDispatch=Round.keep_surrender_prompt
+    _G.HSMPSurrenderPromptDispatch=function(w)Round.queue_ui('prompt',w)end
     -- The cooked HUD uses Unreal's fast event-graph path, bypassing its Tick
     -- wrapper. Run after the graph so native visibility has finished updating.
     local hud='/Game/UI/UI_HUD.UI_HUD_C:ExecuteUbergraph_UI_HUD'
@@ -206,7 +248,7 @@ function Round.install_hooks()
             if _G.HSMPSurrenderPromptDispatch then _G.HSMPSurrenderPromptDispatch(ctx:get())end
         end)}
     end
-    _G.HSMPSurrenderMeterDispatch=Round.keep_surrender_meter
+    _G.HSMPSurrenderMeterDispatch=function(w)Round.queue_ui('meter',w)end
     local meter='/Game/UI/UI_GiveUp.UI_GiveUp_C:ExecuteUbergraph_UI_GiveUp'
     if not _G.HSMPRoundWidgetHooks[meter]and valid(StaticFindObject(meter))then
         _G.HSMPRoundWidgetHooks[meter]={RegisterHook(meter,function(ctx)
@@ -273,6 +315,7 @@ function Round.hold(world)
         end
     end
     if removed and (not _G.HSMPUI or not _G.HSMPUI.is_open()) then
+        if _G.HSMPPause and _G.HSMPPause.restore_focus()then return end
         local pc=require("UEHelpers").GetPlayerController()
         if valid(pc) then
             StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary"):SetInputMode_GameOnly(pc,true)
@@ -302,6 +345,8 @@ function Round.poll(world,before_reset)
         if valid(a) and a:GetWorld():GetFullName()==world:GetFullName()
             and a:GetClass():GetFName():ToString()=="Arena_Cutting_Map_C" then
             for _,widget in pairs(surrender_widgets)do retire_surrender(widget)end
+            for _,widget in pairs(owned_huds)do retire_surrender(widget)end
+            owned_huds={};ui_queue={};retired_surrender={}
             surrender_widgets={}
             before_reset()
             guarded={}
@@ -317,6 +362,8 @@ end
 function Round.release()
     for _,widget in pairs(surrender_widgets)do retire_surrender(widget)end
     surrender_widgets={}
+    for _,widget in pairs(owned_huds)do retire_surrender(widget)end
+    owned_huds={};ui_queue={};retired_surrender={}
     guarded={}
     retired_fades={}
     next_scan=0

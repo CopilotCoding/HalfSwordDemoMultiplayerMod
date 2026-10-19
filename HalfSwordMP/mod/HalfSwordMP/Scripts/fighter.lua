@@ -60,7 +60,11 @@ local function step(context)
 end
 local function acquire(local_pawn,waiting,root,owner)
     if pending_owner and pending_owner~=owner then Fighter.destroy() end
-    if not valid(pending_pawn) then pending_pawn=waiting.spawn_at(local_pawn,root);pending_owner=owner;return end
+    if not valid(pending_pawn)then
+        pending_pawn=waiting.candidate and waiting.candidate(local_pawn,true)or nil
+        if not valid(pending_pawn)then pending_pawn=waiting.spawn_at(local_pawn,root)end
+        pending_owner=owner;return
+    end
     if not waiting.ready(pending_pawn) then return end
     local p=pending_pawn;pending_pawn,pending_owner=nil,nil
     local gs,world=helpers.GetGameplayStatics(),local_pawn:GetWorld()
@@ -88,9 +92,10 @@ end
 function Fighter.update(local_pawn,renderer,waiting)
     local root=renderer.root();local value,rows=renderer.equipment()
     if not root or not value or not value.present then return end
-    if lease and (not valid(lease.pawn) or lease.owner~=renderer.owner()) then Fighter.destroy() end
+    if lease and (not valid(lease.pawn)or not valid(lease.pawn.Mesh)or lease.owner~=renderer.owner())then Fighter.destroy()end
     local p=lease and lease.pawn or acquire(local_pawn,waiting,root,renderer.owner())
     if not valid(p) then return end
+    if lease.replica and not valid(lease.replica.control)then lease.replica=nil end
     if not lease.equipment or lease.equipment.signature~=value.signature then
         local keep_armor=lease.equipment and lease.equipment.armor_signature==value.armor_signature
         if keep_armor and lease.replica then Replica.clear_weapons(lease.replica)
@@ -109,12 +114,20 @@ function Fighter.update(local_pawn,renderer,waiting)
         waiting.equipment(p,lease.equipment.weapons)
         lease.appearance_dirty=true
     end
+    if not lease.replica then lease.replica=Replica.create(p,lease.equipment)end
     Equipment.bind(lease.equipment,value,rows)
     -- The same modular class can spawn with different blade materials. Use
     -- the owner's native sharpness, rigidity and other computed properties.
     Equipment.sync(lease.equipment,value)
     local clock=now(local_pawn)
     if lease.appearance_dirty or not lease.visibility_after or clock>=lease.visibility_after then
+        -- Delayed native spawn/death callbacks can hide a driven opponent.
+        -- Restore the body render flags without rebuilding clothes or wounds.
+        if p.bHidden then p:SetActorHiddenInGame(false)end
+        if not p.Mesh:IsVisible()then p.Mesh:SetVisibility(true,false)end
+        if p.Mesh.bHiddenInGame then p.Mesh:SetHiddenInGame(false,false)end
+        if p.Mesh.bOwnerNoSee then p.Mesh:SetOwnerNoSee(false)end
+        if p.Mesh.bOnlyOwnerSee then p.Mesh:SetOnlyOwnerSee(false)end
         Equipment.show_fighter(lease.equipment,rows);lease.visibility_after=clock+.25
     end
     lease.root=root

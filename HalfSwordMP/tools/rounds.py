@@ -46,7 +46,11 @@ class Rounds:
         self.id=0;self.phase="waiting";self.reason="waiting";self.deadline=0
         self.previous_owners=(None,None)
         self.map=None
-    def restart(self,local,remote,connected):
+    def restart(self,local,remote,connected,allow_respawning=False):
+        if allow_respawning and connected and self.phase=='respawning'and self.id>0 and self.map is not None:
+            if local and remote and local['map']==remote['map']==self.map:
+                self.previous_owners=(local['vitals'].get('owner_id'),remote['vitals'].get('owner_id'))
+            self.id+=1;self.reason='respawning';self.deadline=0;return True
         if (not connected or self.phase not in ("playing","restart") or self.id<1
                 or not local or not remote or local["map"]!=remote["map"] or local["map"]!=self.map):
             return False
@@ -73,8 +77,9 @@ class Rounds:
                 if self.id==0:self.id=1
                 host_out,guest_out=defeat("host",local,remote),defeat("guest",remote,local)
                 if host_out or guest_out:
-                    self.previous_owners=owners;self.phase="restart";self.deadline=now+3
+                    self.previous_owners=owners;self.phase="restart"
                     self.reason="both_out" if host_out and guest_out else host_out or guest_out
+                    self.deadline=now+(.25 if(host_out and host_out.endswith('_gave_up'))or(guest_out and guest_out.endswith('_gave_up'))else 3)
                 else:self.phase="playing";self.reason="ready"
         elif local and remote and local["map"]!=remote["map"]:
             self.phase="waiting";self.reason="waiting"

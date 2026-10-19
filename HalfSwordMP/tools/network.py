@@ -24,10 +24,16 @@ from controls import validate_input,read_input,input_text
 MAGIC = b"HSMPD"
 MAX_PACKET = 65536
 MAX_DATAGRAM = 1200
-FRAGMENT = b"HSF17"
+FRAGMENT = b"HSF18"
 CHUNK = 1100
 TIMEOUT = 5.0
 NONCE = re.compile(r"^[a-f0-9]{32}$")
+
+def valid_restart_request(value):
+    return value is None or (isinstance(value,dict)and set(value)=={'session','round','request'}
+        and isinstance(value['session'],str)and NONCE.fullmatch(value['session'])is not None
+        and type(value['round'])is int and 1<=value['round']<2**31
+        and type(value['request'])is int and 1<=value['request']<2**53)
 
 
 def signature(payload: bytes, key: bytes | None) -> bytes:
@@ -145,17 +151,18 @@ class Peer:
         self.remote_input_counter=0
         self.remote_damage = None
         self.remote_round = None
+        self.remote_restart_request = None
         self.remote_pose_counter = 0
         self.connected = False
 
     def hello(self) -> dict:
         return {"kind": "hello", "build": self.build, "session": self.session}
 
-    def state(self, pose, damage=None,round_state=None) -> dict:
+    def state(self, pose, damage=None,round_state=None,restart_request=None) -> dict:
         self.sequence += 1
         return {"kind": "state", "build": self.build, "session": self.session,
                 "peer": self.remote_session, "seq": self.sequence, "pose": pose,
-                "damage": damage,"round":round_state}
+                "damage": damage,"round":round_state,"restart_request":restart_request}
 
     def controls(self,control):
         self.input_sequence+=1
@@ -204,7 +211,9 @@ class Peer:
         if not 0 <= message["seq"] < 2**53 or not validate_pose(message.get("pose")):
             return []
         if (not validate_damage(message.get("damage")) or "controls" in message or "guest" in message
-                or not validate_round(message.get("round")) or (self.role=="host" and message.get("round") is not None)):
+                or not validate_round(message.get("round")) or (self.role=="host" and message.get("round") is not None)
+                or not valid_restart_request(message.get('restart_request'))
+                or(self.role!='host'and message.get('restart_request')is not None)):
             return []
         if self.role == "host" and self.address is None:
             candidate = self.pending.get(address)
@@ -222,6 +231,7 @@ class Peer:
         self.remote_pose = message.get("pose")
         self.remote_damage = message.get("damage")
         self.remote_round = message.get("round")
+        self.remote_restart_request=message.get('restart_request')
         self.remote_pose_counter += 1
         return []
 
@@ -232,6 +242,7 @@ class Peer:
         self.session = secrets.token_hex(16)
         self.sequence, self.received_sequence = 0, -1
         self.remote_pose = None
+        self.remote_restart_request=None
         self.remote_input=None;self.remote_input_counter+=1
         self.input_sequence,self.received_input_sequence=0,-1
         self.remote_damage = None
@@ -275,6 +286,8 @@ class Bridge:
         self.last_send_error = ""
         self.rounds=Rounds() if role=="host" else None
         self.round_state=None
+        self.restart_request=None;self.restart_sequence=0
+        self.round_mark=None;self.round_mark_at=time.monotonic()
         self.frame=None
         self.arena_frame=ArenaFrame()
         self.cached_local_pose=None;self.cached_local_pose_at=-1e9
@@ -316,9 +329,27 @@ class Bridge:
         elif now-self.cached_local_pose_at<.5:value=self.cached_local_pose
         return value
 
+    def respawn_retry_ready(self,now=None):
+        now=time.monotonic()if now is None else now;r=self.round_state
+        return bool(r and r['phase']=='respawning'and now-self.round_mark_at>=6
+            and(not self.rounds or self.rounds.id==r['id']))
+
+    def restart_ready(self,now=None):
+        r=self.round_state
+        return bool(self.peer.connected and r and r['id']>0 and(not self.restart_request)
+            and(r['phase']in('playing','restart')or self.respawn_retry_ready(now)))
+
     def restart_round(self):
+        if self.peer.role=='join':
+            r=self.peer.remote_round;local=self.local_pose(time.monotonic());remote=self.peer.remote_pose
+            if not self.restart_ready():return False
+            if r['phase']!='respawning'and(not local or not remote or local['map']!=remote['map']):return False
+            self.restart_sequence+=1
+            self.restart_request={'session':r['session'],'round':r['id'],'request':self.restart_sequence}
+            self.last_send=-1e9;return True
         if self.peer.role!="host" or self.rounds is None:return False
-        if not self.rounds.restart(self.local_pose(time.monotonic()),self.peer.remote_pose,self.peer.connected):return False
+        if not self.rounds.restart(self.local_pose(time.monotonic()),self.peer.remote_pose,self.peer.connected,
+                allow_respawning=self.respawn_retry_ready()):return False
         self.last_send=-1e9
         return True
 
@@ -344,6 +375,7 @@ class Bridge:
         if self.peer.expire(now):
             print("Peer timed out; waiting for reconnect.", flush=True)
             self.round_state=None
+            self.restart_request=None
             self.last_round_signature=None
             if self.rounds:self.rounds=Rounds()
             atomic_write(self.runtime / "round.cfg", "OFF\n")
@@ -358,9 +390,20 @@ class Bridge:
                 # Never publish a guest fighter in host coordinates until its
                 # native arena frame has been established.
                 if self.frame is None:local_pose=None
+                r=self.peer.remote_round
+                if self.restart_request and r and(r['session']!=self.restart_request['session']or r['id']!=self.restart_request['round']):
+                    self.restart_request=None
+            else:
+                request=self.peer.remote_restart_request
+                if(request and self.peer.connected and request['session']==self.rounds.session
+                        and request['round']==self.rounds.id):
+                    self.rounds.restart(local_pose,self.peer.remote_pose,True,allow_respawning=self.respawn_retry_ready(now))
             self.round_state=(self.rounds.observe(local_pose,self.peer.remote_pose,self.peer.connected,now)
                 if self.rounds else self.peer.remote_round)
-            self.send(self.peer.state(pose_frame(local_pose,self.frame),damage_frame(damage,self.frame),self.round_state if self.rounds else None),self.peer.address)
+            if self.round_state:
+                mark=(self.round_state['session'],self.round_state['id'],self.round_state['phase'])
+                if mark!=self.round_mark:self.round_mark=mark;self.round_mark_at=now
+            self.send(self.peer.state(pose_frame(local_pose,self.frame),damage_frame(damage,self.frame),self.round_state if self.rounds else None,self.restart_request),self.peer.address)
             self.write_round(now)
             self.last_send = now
         frame_ready=self.peer.role!="join" or self.frame is not None

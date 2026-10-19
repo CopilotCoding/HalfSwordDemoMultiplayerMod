@@ -25,10 +25,13 @@ function Interpolation.push(state,frame,now,key)
     -- a moving fighter alternate between a fast step and a stationary frame.
     local duration=math.max(.008,math.min(.05,now-state.time))
     state.from,state.to,state.time,state.duration=current,frame,now,duration
+    state.sample_time,state.sample_result=nil,nil
     return state
 end
 function Interpolation.sample(state,now)
+    if state.sample_time==now then return state.sample_result end
     local t=math.max(0,math.min(1,(now-state.time)/state.duration))
+    if t>=1 then return state.to end
     local result={bones={},parts={},colliders={},collision_modes=state.to.collision_modes,
         root=Interpolation.root(state.from.root,state.to.root,t)}
     for _,kind in ipairs({"bones","parts","colliders"}) do
@@ -37,6 +40,7 @@ function Interpolation.sample(state,now)
             result[kind][id]=a and Interpolation.transform(a,b,t) or b
         end
     end
+    state.sample_time,state.sample_result=now,result
     return result
 end
 return Interpolation

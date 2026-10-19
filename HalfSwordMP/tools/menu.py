@@ -78,8 +78,8 @@ class Menu:
             atomic_write(self.runtime/"match.request",f"HSMPMATCH1|{time.time_ns()}|{time.time()}\n")
             self.message="Entering multiplayer with your selected fighter"
         elif action=="restart_round":
-            if not self.bridge or self.bridge.peer.role!="host":
-                raise ValueError("Only the host can restart a round")
+            if not self.bridge:
+                raise ValueError("Connect before restarting a round")
             if not self.bridge.restart_round():
                 raise ValueError("Both fighters must be in the multiplayer match before restarting")
             self.message="Starting the next multiplayer round"
@@ -143,8 +143,7 @@ class Menu:
             if self.updates.message not in ("Updates off","Up to date"):message+=" / "+self.updates.message
             clean=lambda v:str(v).replace("—","-").replace("|"," ").replace("\n"," ").replace("\r"," ").encode("ascii","replace").decode()[:600]
             role=self.bridge.peer.role if self.bridge else "off"
-            can_restart=bool(role=="host" and self.bridge.peer.connected and self.bridge.rounds
-                and self.bridge.rounds.id>0 and self.bridge.rounds.phase in ("playing","restart"))
+            can_restart=bool(self.bridge and self.bridge.restart_ready(now))
             values=["HSUISTATE1",message,int(self.settings["automatic_updates"]),self.settings["host"] or "-",
                     self.settings["port"],VERSION,int(self.updates.pending is not None),time.time(),role,int(can_restart)]
             atomic_write(self.runtime/"ui.state","|".join(clean(v) for v in values)+"\n")

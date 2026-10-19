@@ -41,6 +41,7 @@ end
 function Session.is_host() return false end
 function Session.in_match() return Match.playable() end
 function Session.owns_arena()return role~='off'and Match.active()end
+function Session.update_ui()if Round.ui_tick then Round.ui_tick()end end
 local function guest_spawning()
     return role=='join'and Match.active()and not Match.playable()and not _G.HSMPNativeProxySpawn
 end

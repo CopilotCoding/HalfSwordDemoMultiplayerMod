@@ -98,6 +98,10 @@ local function update()
     if pending then return end
     pending = true
         local started=os.clock()
+        if _G.HSMPSession and _G.HSMPSession.update_ui then
+            local ui_ok,ui_error=pcall(_G.HSMPSession.update_ui)
+            if not ui_ok and tostring(ui_error)~=last_error then last_error=tostring(ui_error);log('Native UI: '..last_error)end
+        end
         if renderer_failed and started>=renderer_retry_at then renderer_failed=false end
         if (_G.HSMPDiagnosticRequests or 0)>0 then
             _G.HSMPDiagnosticRequests=0
@@ -180,4 +184,4 @@ assert(type(LoopInGameThreadAfterFrames)=='function','HalfSwordMP requires its p
 _G.HSMPUpdate=update
 _G.HSMPUpdateHandle=LoopInGameThreadAfterFrames(1,update)
 
-log("0.10.11: native surrender prompt and explicit match entry. F8: discovery. F9: local pose preview.")
+log("0.10.12: native menus, consistent surrender and shared restart requests. F8: discovery. F9: local pose preview.")

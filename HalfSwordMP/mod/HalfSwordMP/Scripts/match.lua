@@ -13,6 +13,7 @@ local tutorial_instance,tutorial_original
 local selection
 local instance_selection
 local selected_loadout,loadout_pawn,loadout_after,loadout_done
+local armor_retries=0
 local Equipment
 local retired_cards={}
 local next_menu_scan=0
@@ -62,15 +63,26 @@ function Match.loadout_ready(pawn)
     if not valid(pawn)then return false end
     local name=pawn:GetFullName()
     local clock=helpers.GetGameplayStatics():GetRealTimeSeconds(pawn:GetWorld())
-    if name~=loadout_pawn then loadout_pawn,loadout_after,loadout_done=name,clock+2,false end
+    if name~=loadout_pawn then loadout_pawn,loadout_after,loadout_done=name,clock+2,false;armor_retries=0 end
     if loadout_done==true then return true end
     if clock<loadout_after then return false end
     Equipment=Equipment or dofile(paths.scripts..'/equipment.lua')
     if loadout_done=='settling'then
+        if Equipment.loadout_present and not Equipment.loadout_present(pawn,selected_loadout)then
+            if armor_retries<6 then
+                armor_retries=armor_retries+1
+                Equipment.restore_armor(pawn,selected_loadout);loadout_after=clock+.5;return false
+            end
+            -- Do not announce an unequipped life as playable. A shared manual
+            -- retry becomes available if native setup stays stalled.
+            loadout_after=clock+.5;return false
+        end
         Equipment.restore_cosmetics(pawn,selected_loadout)
         loadout_done=true;return true
     end
-    if not selected_loadout then selected_loadout=Equipment.save_loadout(pawn)
+    if not selected_loadout then
+        if Equipment.selection_ready and not Equipment.selection_ready(pawn)then loadout_after=clock+.25;return false end
+        selected_loadout=Equipment.save_loadout(pawn)
     else
         Equipment.restore_loadout(pawn,selected_loadout)
         loadout_after=clock+.5;loadout_done='settling';return false
@@ -252,14 +264,17 @@ function Match.enter(world,pawn)
                 report("loading","Preparing native combat with your selected fighter")
                 return false
             end
-            pending_entry=false
-            active=true
-            remember_selection()
             local preview=menu.MyDressUpDarling
             if valid(preview)and not selected_loadout then
                 Equipment=Equipment or dofile(paths.scripts..'/equipment.lua')
+                if Equipment.selection_ready and not Equipment.selection_ready(preview)then
+                    pending_entry=true;report('loading','Waiting for your selected clothing to finish loading');return false
+                end
                 selected_loadout=Equipment.save_loadout(preview)
             end
+            pending_entry=false
+            active=true
+            remember_selection()
             awaiting_card=true
             bypass_tutorial()
             Match.install_hooks()
