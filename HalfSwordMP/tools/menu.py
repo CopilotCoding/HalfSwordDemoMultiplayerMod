@@ -21,7 +21,7 @@ def lan_ipv4():
 
 
 class Menu:
-    def __init__(self,root:Path,runtime:Path,build:str):
+    def __init__(self,root:Path,runtime:Path,build:str,preferences:Path|None=None):
         self.root,self.runtime,self.build=root,runtime,build
         self.bridge=None;self.server=None
         self.updates=Updates(root,runtime)
@@ -30,15 +30,16 @@ class Menu:
         self.message="Offline — choose Host or Join"
         self.restart=False
         self.settings={"automatic_updates":False,"host":"","port":7777}
+        self.preferences=preferences or runtime/'preferences.json'
         try:
-            saved=json.loads((runtime/"preferences.json").read_text())
+            saved=json.loads(self.preferences.read_text())
             self.settings["automatic_updates"]=saved.get("automatic_updates") is True
             if isinstance(saved.get("host"),str) and HOST.fullmatch(saved["host"]):self.settings["host"]=saved["host"]
             if type(saved.get("port")) is int and 1<=saved["port"]<=65534:self.settings["port"]=saved["port"]
         except (OSError,ValueError):pass
         atomic_write(runtime/"role.cfg","OFF\n")
         atomic_write(runtime/"match.request","OFF\n")
-    def save(self):atomic_write(self.runtime/"preferences.json",json.dumps(self.settings,indent=2))
+    def save(self):atomic_write(self.preferences,json.dumps(self.settings,indent=2))
     def disconnect(self):
         if self.bridge:self.bridge.close();self.bridge=None
         if self.server:self.server.close();self.server=None
@@ -62,7 +63,7 @@ class Menu:
             try:self.bridge=Bridge(action,None,self.build,self.runtime,port,host or None)
             except OSError as exc:
                 if action=="host" and (exc.errno in (errno.EADDRINUSE,10048) or getattr(exc,"winerror",None)==10048):
-                    raise ValueError(f"Port {port} is already in use. Close the other multiplayer launcher, then click Host again.") from None
+                    raise ValueError(f"Port {port} is already in use. Join that host, or choose a different port for a second host.") from None
                 raise
             if action=="host":
                 try:self.server=UpdateServer(self.root,port+1)

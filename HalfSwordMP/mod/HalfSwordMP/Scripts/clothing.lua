@@ -4,7 +4,7 @@ local Clothing={}
 local scans={}
 local function valid(o)return o~=nil and o:IsValid()end
 function Clothing.reset()scans={}end
-function Clothing.update(pawn)
+function Clothing.update(pawn,driven)
  if not valid(pawn)or not valid(pawn.Mesh)then return end
  local key=pawn:GetFullName();local now=os.clock()
  if now<(scans[key]or 0)then return end;scans[key]=now+.25
@@ -12,6 +12,12 @@ function Clothing.update(pawn)
  for _,r in ipairs(pawn:K2_GetComponentsByClass(StaticFindObject('/Script/Engine.SkinnedMeshComponent')))do
   local c=r:get();local asset=valid(c)and c:GetSkinnedAsset()or nil
   if valid(asset)then
+   -- Physics Control drives the remote bones outside the normal actor tick.
+   -- Invalidate its cached shadow even when the renderer sees no animation.
+   if driven and c.ShadowCacheInvalidationBehavior~=1 then
+    c.ShadowCacheInvalidationBehavior=1
+    if c.CastShadow then c:SetCastShadow(false);c:SetCastShadow(true)end
+   end
    local path=asset:GetFullName():gsub('^%S+ ','')
    local worn=path:sub(1,22)=='/Game/Assets/Clothing/'or path:sub(1,19)=='/Game/Assets/Armor/'
    local parent=worn and c:GetAttachParent()or nil

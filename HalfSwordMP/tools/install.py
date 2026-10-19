@@ -59,12 +59,12 @@ def install(game: Path) -> None:
     binaries = game / "HalfSwordUE5/Binaries/Win64"
     if not (binaries / "HalfSwordUE5-Win64-Shipping.exe").is_file():
         raise ValueError(f"Game executable not found in {binaries}")
-    archive = get_loader()
     marker = binaries / "ue4ss/.halfswordmp-managed"
     if ((binaries / "dwmapi.dll").exists() or (binaries / "ue4ss").exists()) and not marker.exists():
         raise ValueError("An unmanaged loader exists. Back it up before installing.")
     fresh = not marker.exists()
     if fresh or marker.read_text().strip() != LOADER_SHA256:
+        archive=get_loader()
         with zipfile.ZipFile(archive) as z:
             for member in z.infolist():
                 target = (binaries / member.filename).resolve()
@@ -110,6 +110,17 @@ def install(game: Path) -> None:
         "return {runtime = " + json.dumps(runtime.as_posix()) + ", scripts = "
         + json.dumps((destination / "Scripts").as_posix()) + "}\n", encoding="utf-8"
     )
+    # Keep a complete, portable companion beside writable per-user runtime
+    # data. Steam launches no longer depend on keeping the extracted ZIP folder.
+    from bootstrap import cache_root,lua_paths
+    from bundle import package_bytes,package_files
+    companion=cache_root(game);companion.mkdir(parents=True,exist_ok=True)
+    for name,data in package_files(package_bytes(ROOT)).items():
+        target=companion/name;target.parent.mkdir(parents=True,exist_ok=True)
+        if not target.exists()or target.read_bytes()!=data:target.write_bytes(data)
+    (companion/'runtime').mkdir(exist_ok=True)
+    shutil.copy2(runtime/'build.json',companion/'runtime/build.json')
+    (scripts/'paths.lua').write_text(lua_paths(scripts,companion,Path(sys.executable),game),encoding='utf-8')
     print(f"Installed HalfSwordMP into {destination}")
     print(f"Runtime data: {runtime}")
 

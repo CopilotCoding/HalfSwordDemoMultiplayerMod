@@ -2,6 +2,13 @@
 -- Textures, injury masks and camera-dependent hiding remain native state.
 local Cosmetics={}
 local function valid(o)return o~=nil and o:IsValid()end
+function Cosmetics.view_dependent(name)
+ name=name:lower()
+ for _,word in ipairs({'hide','hidden','opacity','fade','camera','dither'})do
+  if name:find(word,1,true)then return true end
+ end
+ return false
+end
 local function cosmetic(name)
  name=name:lower()
  for _,word in ipairs({'blood','wound','damage','opacity','hide','hidden','camera','dither','fade','alpha'})do
@@ -34,8 +41,9 @@ function Cosmetics.capture(pawn,weapons)
     end
     if not material:IsA('/Script/Engine.MaterialInstance')then break end
     for _,kind in ipairs({'ScalarParameterValues','VectorParameterValues'})do
-     material[kind]:ForEach(function(_,r)
-      local p=r:get();local info=p.ParameterInfo;local name=info.Name:ToString()
+     local parameters=material[kind]
+     for index=1,#parameters do
+      local p=parameters[index];local info=p.ParameterInfo;local name=info.Name:ToString()
       local key=name..':'..info.Association..':'..info.Index
       if cosmetic(name)and not seen[key]then
        seen[key]=true
@@ -43,7 +51,7 @@ function Cosmetics.capture(pawn,weapons)
        if kind=='VectorParameterValues'then value={value.R,value.G,value.B,value.A}end
        values[#values+1]={name=name,association=info.Association,index=info.Index,value=value}
       end
-     end)
+     end
     end
     material=material.Parent
    end

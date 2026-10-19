@@ -100,7 +100,8 @@ function S.update(own)
   if not ok then table.remove(pending,1);print('[HalfSwordMP] Sever preparation: '..tostring(err)..'\n');return 0,1 end
   return 0,0
  end
- local ready=false;own['Currently VP Painted Dismembered Mesh']:ForEach(function(_,v)if v:get().AmountOfVerticesAtLOD>0 then ready=true end end)
+ local ready=false;local painted=own['Currently VP Painted Dismembered Mesh']
+ for i=1,#painted do if painted[i].AmountOfVerticesAtLOD>0 then ready=true;break end end
  if ready then
   local ok,err=pcall(own['Dismember Function Delayed'],own,own.Mesh,e.part,e.marker,e.overlaps,e.boxes[1],e.boxes[2],e.source,{})
   table.remove(pending,1)

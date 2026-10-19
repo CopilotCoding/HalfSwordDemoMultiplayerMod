@@ -7,10 +7,10 @@ injury events represented on their PC. The mod adds an in-game multiplayer
 panel, shared rounds, a shared restart button and optional updates from the
 host.
 
-**Current build: 0.10.11 Â· Protocol: 17 Â· Players: 2**
+**Current build: 0.10.14 | Protocol: 19 | Players: 2**
 
-[Install](#install) Â· [Play](#play) Â· [Direct IP](#direct-ip) Â·
-[Updates](#optional-updates) Â· [Development summary](#development-summary)
+[Install](#install) | [Play](#play) | [Direct IP](#direct-ip) |
+[Updates](#optional-updates) | [Development summary](#development-summary)
 
 ## Overview
 
@@ -27,6 +27,50 @@ controls. Native KO/death screens remain suppressed and selected gear is retaine
 across shared resets. Both PCs must run this version (protocol 19).
 
 ## Current build and validation
+
+0.10.14 addresses persistent opponent audio loops, missing downed give-up
+meters, remote shadow caching, equipment visibility and native object safety.
+Opponent breathing, dying and weapon-slide loops are stopped on driven actors;
+finite impact/pain sounds remain native. If native G input repeatedly fails to
+create a meter, the mod opens the game's own meter and leaves progression and
+cancellation to its native event graph. Only one meter owns a hold.
+
+Remote animated meshes invalidate their shadow cache. Camera-specific material
+hide/fade parameters no longer travel to opponents or dropped weapons, and
+dropped weapon component lists refresh after native equipment changes. These
+repairs do not establish that every intermittent invisible fighter or clothing
+case is resolved; the reported pickup/drop disappearance was not reliably
+reproduced in the native fixture.
+
+Native arrays now use bounded indexed reads. The pinned UE4SS source explicitly
+flags a stack-corruption crash in its array callback implementation. Candidate
+crash dumps showed native Lua/object access failures, including a reproduced
+client crash during development. This change removes that callback path from
+the mod; it does not prove all reported fatal errors have the same cause.
+F5 also rebuilds when a child widget becomes invalid.
+
+Multiple launcher windows are supported with separate runtime files. After one
+installation through **Start Multiplayer.cmd**, opening the game through Steam
+automatically starts a hidden companion for that game window. It exits with the
+game. A cached companion keeps this working after the extracted folder moves.
+Python must remain installed. Pending updates wait for all windows using the
+same installed executable to close.
+
+Validation: **163 automated checks passed**. Two visible disposable native game
+windows completed 100 F5 toggles each, recovered deliberately invalid menu
+children, completed missing-meter fallback holds with one meter, and reached
+round 7 through healthy shared resets. Injected persistent native audio loops
+stopped while a finite sound retained its volume. Remote meshes used the intended
+shadow setting; a visual trailing-shadow comparison remains unconfirmed. A
+two-minute stress run performed 580/579 full Lua collections, repeated appearance
+captures and 60 further F5 toggles per peer; both remained connected with the
+opponent visible. Two windows from the same executable independently started
+companions and connected on one destination port without a launcher. This was
+an executable launch using the installed bootstrap, not a Steam UI click.
+Long sessions and the brother's machine still need playtesting. No numerical
+Internet latency or laptop FPS improvement is claimed.
+
+### Retained from 0.10.13
 
 0.10.13 fixes the extra empty give-up outline that appeared halfway through a
 hold. Native HUDs and meters can run their event graphs with widget ticking
@@ -232,10 +276,13 @@ also processes F5/F8/F9 intent without creating new cross-thread callbacks.
 
 ## Install
 
-1. Close Half Sword and its multiplayer launcher.
-2. Extract the ZIP, open `HalfSwordMP`, and run **Start Multiplayer.cmd**.
-3. Use the new launcher on both PCs. It installs the current scripts into the
-   selected demo and removes retired adapters. Keep the launcher running.
+1. Close all Half Sword windows before installing or upgrading the mod.
+2. Extract the ZIP, open `HalfSwordMP`, and run **Start Multiplayer.cmd** on
+   each PC. This installs the scripts and starts a game window.
+3. After installation, you may launch normally through Steam. Its hidden
+   companion starts automatically; the launcher is no longer required.
+4. To open additional windows, run **Start Multiplayer.cmd** again. Each window
+   gets separate runtime files. Keep each launcher open for the window it starts.
 
 Python 3.10 or newer must be available as `python`. The launcher finds the
 workspace game or the usual Steam installation, otherwise asks for the game
@@ -261,7 +308,7 @@ Both players have a **Restart round** button beside **Enter multiplayer match**.
 The host coordinates each shared reset and retains the selected fighter/equipment.
 The button is disabled during normal respawn; if that takes over six seconds it
 becomes available for a retry. A client request remains pending until the host
-advances the round. Both players must use protocol 18.
+advances the round. Both players must use protocol 19.
 
 Confirmed unconsciousness, sustained native incapacity and death trigger a
 three-second restart coordinated by the host. A completed native surrender
@@ -281,6 +328,11 @@ regeneration cannot erase it between snapshots. A KO preserves native player
 control identity. Death/result widgets are hidden during construction and removed
 while multiplayer owns the arena. Native input is restored after possession and
 when closing the panel. Returning to the main menu clears the old match.
+
+For host/client testing on one PC, host on UDP **7777** and join
+**127.0.0.1**, port **7777**, in the other window. The client uses a separate
+ephemeral local socket. Only two hosts on the same PC need different listening
+ports. Sharing one port between a host and its joining client is supported.
 
 ## What is synchronized
 

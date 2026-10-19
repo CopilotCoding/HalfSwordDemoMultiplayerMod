@@ -221,7 +221,7 @@ end
 function Session.animate(renderer)
     if role~="off" and Match.playable() and valid(local_pawn) then
         if _G.HSMPDropped then _G.HSMPDropped.tick(local_pawn,renderer)end
-        Clothing.update(local_pawn);Clothing.update(Fighter.pawn())
+        Clothing.update(local_pawn);Clothing.update(Fighter.pawn(),true)
         Fighter.controls(local_pawn)
         Fighter.render(renderer)
         if connected and renderer.vitals and _G.HSMPAvatar then

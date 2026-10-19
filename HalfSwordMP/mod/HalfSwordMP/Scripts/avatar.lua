@@ -6,6 +6,7 @@ _G.HSMPAvatarOwner=_G.HSMPAvatarOwner or {}
 local Effects=dofile(require("paths").scripts.."/effects.lua")
 local Geometry=dofile(require("paths").scripts.."/geometry.lua")
 local Equipment=dofile(require("paths").scripts.."/equipment.lua")
+local Cosmetics=dofile(require('paths').scripts..'/cosmetics.lua')
 local Injury=dofile(require('paths').scripts..'/injury.lua')
 local Movement=dofile(require('paths').scripts..'/movement.lua')
 local Dropped=dofile(require('paths').scripts..'/dropped_weapons.lua')
@@ -59,12 +60,14 @@ local function capture_parameters(lines, material, id, slot)
     while valid(material) and material:IsA("/Script/Engine.MaterialInstance") and depth < 8 do
         depth = depth + 1
         for _,kind in ipairs({"ScalarParameterValues","VectorParameterValues"}) do
-            material[kind]:ForEach(function(_,ref)
-                local p = ref:get()
+            local parameters=material[kind]
+            for index=1,#parameters do
+                local p = parameters[index]
                 local name = p.ParameterInfo.Name:ToString()
                 local association,index = p.ParameterInfo.Association,p.ParameterInfo.Index
                 local key = name..":"..association..":"..index
-                if #name <= 64 and name:match("^[%w_ ./:%-]+$") and not seen[key] and count < 64 then
+                if #name <= 64 and name:match("^[%w_ ./:%-]+$") and not seen[key] and count < 64
+                    and not Cosmetics.view_dependent(name)then
                     seen[key],count = true,count+1
                     local value = p.ParameterValue
                     if kind == "ScalarParameterValues" then
@@ -73,7 +76,7 @@ local function capture_parameters(lines, material, id, slot)
                         lines[#lines+1] = string.format("P|%s|%d|%s|%d|%d|%.5f|%.5f|%.5f|%.5f",id,slot,name,association,index,value.R,value.G,value.B,value.A)
                     end
                 end
-            end)
+            end
         end
         material = material.Parent
     end
@@ -84,9 +87,10 @@ local function capture_mesh(lines, c, id, skinned, shared,native)
         local mesh=path(c:GetSkeletalMeshAsset())
         if mesh~=physical_mesh then
             physical_mesh,physical_bones=mesh,{}
-            c:GetSkeletalMeshAsset():GetPhysicsAsset().SkeletalBodySetups:ForEach(function(_,r)
-                local bone=r:get().BoneName;physical_bones[#physical_bones+1]={bone=bone,text=bone:ToString()}
-            end)
+            local bodies=c:GetSkeletalMeshAsset():GetPhysicsAsset().SkeletalBodySetups
+            for i=1,#bodies do
+                local text=bodies[i].BoneName:ToString();physical_bones[#physical_bones+1]={bone=FName(text),text=text}
+            end
         end
         for _,entry in ipairs(physical_bones)do
             lines[#lines+1]='B|body|'..entry.text..'|'..packed(c:GetSocketTransform(entry.bone,0))
@@ -203,7 +207,7 @@ function Avatar.capture(pawn, serial,native)
         local array = o:K2_GetComponentsByClass(StaticFindObject("/Script/Engine.MeshComponent"))
         if type(array) == "table" then
             for _, c in ipairs(array) do add(c:get(),kind) end
-        else array:ForEach(function(_, ref) add(ref:get(),kind) end) end
+        else for i=1,#array do add(array[i],kind)end end
     end
     owner(pawn)
     for _,field in ipairs({'Weapon Slot R 1','Weapon Slot R 2','Weapon Slot L 1','Weapon Slot L 2','Weapon Slot Back'})do

@@ -72,7 +72,10 @@ function Dropped.capture(state,lines,packed,capture_mesh,budget)
    for _,row in ipairs(entry.description.rows)do lines[#lines+1]='D'..row end
   end
   if valid(actor)and not entry.granted and not actor.bHidden then
-   if not entry.components then
+   -- Native hand/module setup can replace mesh components on the same actor.
+   -- A lifetime cache of the old components makes subsequent drops invisible.
+   if not entry.components or os.clock()>=(entry.component_scan or 0)then
+    entry.component_scan=os.clock()+.5
     entry.components={}
     for _,r in ipairs(actor:K2_GetComponentsByClass(StaticFindObject('/Script/Engine.StaticMeshComponent')))do
      local c=r:get()

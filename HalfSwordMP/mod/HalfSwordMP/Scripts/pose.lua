@@ -36,6 +36,7 @@ local Geometry=dofile(require("paths").scripts.."/geometry.lua")
 local Interpolation=dofile(require("paths").scripts.."/interpolation.lua")
 local Held=dofile(require('paths').scripts..'/held_pose.lua')
 local Equipment=dofile(require("paths").scripts.."/equipment.lua")
+local Cosmetics=dofile(require('paths').scripts..'/cosmetics.lua')
 
 local function valid(obj) return obj ~= nil and obj:IsValid() end
 local function path(obj) return obj:GetFullName():gsub("^%S+ ", "") end
@@ -271,7 +272,7 @@ local function render_parts(lines, pawn, offset)
                     end
                     -- The component retains its dynamic material between snapshots.
                 end
-            elseif v[1] == "P" and (#v == 7 or #v == 10) then
+            elseif v[1] == "P" and (#v == 7 or #v == 10)and not Cosmetics.view_dependent(v[4])then
                 local m = materials[v[2]..":"..v[3]]
                 if m and valid(m.dynamic) then
                     expected_parameters[#expected_parameters+1] = {material=m.dynamic,values=v}

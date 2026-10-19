@@ -1,6 +1,5 @@
 """Interactive host/join launcher. Only the host needs to forward a UDP port."""
 from pathlib import Path
-import csv
 import json
 import os
 import subprocess
@@ -9,16 +8,11 @@ import time
 
 from install import ROOT, install, game_folder
 from menu import Menu
+from bootstrap import new_instance,installation_lock,close_companion
 
 
 def main():
     print("HalfSwordMP - in-game multiplayer menu")
-    if sys.platform=="win32":
-        processes=subprocess.run(["tasklist.exe","/FI","IMAGENAME eq HalfSwordUE5-Win64-Shipping.exe",
-                                  "/FO","CSV","/NH"],capture_output=True,text=True,check=True,
-                                 timeout=10,creationflags=subprocess.CREATE_NO_WINDOW)
-        if any(row and row[0].casefold()=="halfswordue5-win64-shipping.exe" for row in csv.reader(processes.stdout.splitlines())):
-            raise ValueError("Close Half Sword before starting the launcher, then try again. This avoids opening a second game copy.")
     runtime = ROOT / "runtime"
     game_path = ROOT / "Half Sword Demo"
     if not game_path.is_dir():
@@ -33,26 +27,16 @@ def main():
             game_path = game_folder(input("Path to your Half Sword Demo folder: "))
     runtime.mkdir(exist_ok=True)
     companion = None
-    lock = (runtime / "bridge.lock").open("a+b")
-    if sys.platform == "win32":
-        import msvcrt
-        lock.seek(0)
-        if not lock.read(1):
-            lock.write(b"0")
-            lock.flush()
-        lock.seek(0)
-        try:
-            msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
-        except OSError:
-            raise ValueError("A launcher is already running for this installation") from None
     game=None
     try:
-        install(game_path)
+        with installation_lock(ROOT):install(game_path)
         build = json.loads((runtime / "build.json").read_text())["sha256"]
-        (runtime/"ui.command").unlink(missing_ok=True)
-        companion=Menu(ROOT,runtime,build)
+        instance=new_instance(ROOT)
+        (instance/'build.json').write_text(json.dumps({'sha256':build,'game':str(game_path)}))
+        companion=Menu(ROOT,instance,build,preferences=runtime/'preferences.json')
         exe = game_path / "HalfSwordUE5/Binaries/Win64/HalfSwordUE5-Win64-Shipping.exe"
-        game = subprocess.Popen([str(exe), "-windowed", "-ResX=1280", "-ResY=720"], cwd=exe.parent)
+        environment=os.environ.copy();environment['HALFSWORDMP_RUNTIME']=instance.as_posix()
+        game = subprocess.Popen([str(exe), "-windowed", "-ResX=1280", "-ResY=720"], cwd=exe.parent,env=environment)
         print("Use the Multiplayer panel in the game, or press F5.")
         print("Host on the main PC; join its IP on the laptop. No room code.")
         print("Keep this launcher open while playing. Ctrl+C stops the connection.")
@@ -60,9 +44,7 @@ def main():
             companion.step()
             time.sleep(0.005)
     finally:
-        try:
-            if companion:companion.close(game_closed=game is not None and game.poll() is not None)
-        finally:lock.close()
+        if companion:close_companion(companion,exe,game_closed=game is not None and game.poll() is not None)
     if companion.restart:
         os.execv(sys.executable,[sys.executable,str(Path(__file__).resolve())])
 

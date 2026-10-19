@@ -173,13 +173,14 @@ function Fighter.appearance(renderer)
                         -- blood textures when changing that cosmetic base.
                         local textures={}
                         if target:IsA('/Script/Engine.MaterialInstanceDynamic')then
-                            target.TextureParameterValues:ForEach(function(_,r)
-                                local p=r:get();local info=p.ParameterInfo
-                                textures[#textures+1]={info={Name=FName(info.Name:ToString()),Association=info.Association,Index=info.Index},value=p.ParameterValue}
-                            end)
+                            local parameters=target.TextureParameterValues
+                            for index=1,#parameters do
+                                local p=parameters[index];local info=p.ParameterInfo
+                                textures[#textures+1]={name=info.Name:ToString(),association=info.Association,index=info.Index,value=p.ParameterValue}
+                            end
                         end
                         target=to:CreateDynamicMaterialInstance(i,source_base,FName('None'))
-                        for _,p in ipairs(textures)do target:SetTextureParameterValueByInfo(p.info,p.value)end
+                        for _,p in ipairs(textures)do target:SetTextureParameterValueByInfo({Name=FName(p.name),Association=p.association,Index=p.index},p.value)end
                     end
                 end
                 if not target:IsA('/Script/Engine.MaterialInstanceDynamic') then
@@ -187,19 +188,33 @@ function Fighter.appearance(renderer)
                 end
                 -- Keep native blood/wound render-target textures on this fighter.
                 -- Only portable cosmetic scalar/vector parameters are copied.
-                source.ScalarParameterValues:ForEach(function(_,r)
-                    local p=r:get();local name=p.ParameterInfo.Name:ToString():lower()
+                local scalars,vectors={},{}
+                local parameters=source.ScalarParameterValues
+                for index=1,#parameters do
+                    local p=parameters[index];local name=p.ParameterInfo.Name:ToString():lower()
                     -- Camera/body hide masks and wound state belong to this
                     -- native instance, not the other player's camera/material.
                     local transient=false
                     for _,word in ipairs({'hide','hidden','blood','wound','damage','opacity','fade','camera','dither','alpha'})do
                         if name:find(word,1,true)then transient=true;break end
                     end
-                    if not transient then target:SetScalarParameterValueByInfo(p.ParameterInfo,p.ParameterValue)end
-                end)
-                source.VectorParameterValues:ForEach(function(_,r)
-                    local p=r:get();target:SetVectorParameterValueByInfo(p.ParameterInfo,p.ParameterValue)
-                end)
+                    if not transient then local info=p.ParameterInfo
+                        scalars[#scalars+1]={name=info.Name:ToString(),association=info.Association,index=info.Index,value=p.ParameterValue}
+                    end
+                end
+                parameters=source.VectorParameterValues
+                for index=1,#parameters do
+                    local p=parameters[index];local info,v=p.ParameterInfo,p.ParameterValue
+                    local name=info.Name:ToString();local transient=false
+                    for _,word in ipairs({'hide','hidden','blood','wound','damage','opacity','fade','camera','dither','alpha'})do
+                        if name:lower():find(word,1,true)then transient=true;break end
+                    end
+                    if not transient then vectors[#vectors+1]={name=name,association=info.Association,index=info.Index,value={R=v.R,G=v.G,B=v.B,A=v.A}}end
+                end
+                -- Native material writes can re-enter hooks. Run them after
+                -- ForEach has released its callback stack and borrowed rows.
+                for _,p in ipairs(scalars)do target:SetScalarParameterValueByInfo({Name=FName(p.name),Association=p.association,Index=p.index},p.value)end
+                for _,p in ipairs(vectors)do target:SetVectorParameterValueByInfo({Name=FName(p.name),Association=p.association,Index=p.index},p.value)end
             end
         end
     end

@@ -10,6 +10,10 @@ local companion_time=0
 _G.HSMPUIActionQueue=_G.HSMPUIActionQueue or {}
 _G.HSMPUIToggleRequests=_G.HSMPUIToggleRequests or 0
 local function valid(o) return o~=nil and o:IsValid() end
+local function intact_widgets()
+    return valid(widget)and valid(canvas)and valid(panel)and valid(status)and valid(address)
+        and valid(port)and valid(automatic)and valid(restart)
+end
 local function text(s) return StaticFindObject("/Script/Engine.Default__KismetTextLibrary"):Conv_StringToText(s) end
 local function string_value(t) return t:ToString() end
 local function make(class,outer) return StaticConstructObject(StaticFindObject("/Script/UMG."..class),outer or widget.WidgetTree) end
@@ -25,6 +29,7 @@ local function label(value,size)
     t:SetFont(font);t:SetText(text(value));return t
 end
 local function request(action,value)
+    if not intact_widgets()then return false end
     if os.time()-companion_time>4 then
         if valid(status) then status:SetText(text("Launcher offline. Start the game with Start Multiplayer.cmd.")) end
         return false
@@ -40,7 +45,7 @@ function UI.is_open() return open and valid(widget) end
 function UI.set_open(value)
     local pc=helpers.GetPlayerController()
     local library=StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
-    if not valid(pc) or not valid(library) or not valid(widget) or not valid(panel) or not valid(address) then return end
+    if not valid(pc) or not valid(library) or not intact_widgets()then return end
     open=value
     -- Keep native settings alive underneath F5; restore their focus on close.
     -- Removing focused native widgets here can invalidate Slate's focus path.
@@ -77,6 +82,13 @@ function UI.destroy()
     _G.HSMPUICallbacks={}
     _G.HSMPUIClickCallbacks={}
     _G.HSMPUIActionQueue={};_G.HSMPUIToggleRequests=0
+    -- Clear Slate's focused descendant before removing a partially retired
+    -- tree. A live shell does not guarantee its native child widgets survived.
+    if valid(widget)then
+        local pc=helpers.GetPlayerController()
+        local library=StaticFindObject('/Script/UMG.Default__WidgetBlueprintLibrary')
+        if valid(pc)and valid(library)then library:SetInputMode_GameOnly(pc,false)end
+    end
     if valid(widget) then widget:RemoveFromParent() end
     if valid(router) then router:K2_DestroyActor() end
     widget,canvas,panel,status,address,port,automatic,router=nil,nil,nil,nil,nil,nil,nil,nil
@@ -155,7 +167,7 @@ function UI.tick()
     if not valid(world) then return end
     if world_name~=world:GetFullName() then UI.destroy();world_name=world:GetFullName() end
     if valid(widget)then
-        local intact=valid(router)
+        local intact=intact_widgets()and valid(router)
         for _,receiver in ipairs(receivers)do if not valid(receiver)then intact=false;break end end
         -- Native LevelReset can remove actors/components without replacing
         -- viewport widgets. Rebuild their delegate recipients together.

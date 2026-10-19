@@ -15,12 +15,17 @@ function Replica.create(pawn,equipment)
  local data={MovementType=1,CollisionType=3,GravityMultiplier=0,PhysicsBlendWeight=1,
   bUseSkeletalAnimation=false,bUpdateKinematicFromSimulation=false}
  local asset=pawn.Mesh:GetSkeletalMeshAsset():GetPhysicsAsset()
- asset.SkeletalBodySetups:ForEach(function(_,ref)
-  local bone=ref:get().BoneName;local text=bone:ToString();local name=FName('HSMPReplica_'..text)
+ local bones={}
+ local setups=asset.SkeletalBodySetups
+ for i=1,#setups do bones[#bones+1]=setups[i].BoneName:ToString()end
+ -- Finish the native array callback before entering another Unreal function.
+ -- Reentrant UFunction calls inside UE4SS ForEach use its callback Lua stack.
+ for _,text in ipairs(bones)do
+  local bone=FName(text);local name=FName('HSMPReplica_'..text)
   c:CreateNamedBodyModifier(name,pawn.Mesh,bone,FName('HSMPReplicaBody'),data)
   c:SetBodyModifierUpdateKinematicFromSimulation(name,true)
   state.bones[#state.bones+1]={bone=text,name=name}
- end)
+ end
  pawn:SetActorTickEnabled(false)
  pawn.CharacterMovement:StopMovementImmediately();pawn.CharacterMovement:SetComponentTickEnabled(false)
  return state

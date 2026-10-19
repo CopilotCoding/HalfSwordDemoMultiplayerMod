@@ -1,5 +1,6 @@
 -- Stop AI movement and hide native opponents without destroying their physics.
 local Waiting={}
+local Audio=dofile(require('paths').scripts..'/audio_guard.lua')
 local saved={}
 local spawned
 local native_equipment={}
@@ -37,6 +38,7 @@ local function restore_responses(s)
 end
 local function hide(s)
     if not valid(s.actor) then return end
+    Audio.quiet(s.actor,true)
     if not s.actor.bHidden then s.actor:SetActorHiddenInGame(true) end
     for _,p in ipairs(s.primitives) do
         local c=p.component
@@ -52,10 +54,10 @@ local function hold(a)
     local now=require("UEHelpers").GetGameplayStatics():GetRealTimeSeconds(a:GetWorld())
     if saved[key] then
         local s=saved[key]
-        if s.dynamic then return end
+        if s.dynamic then Audio.quiet(a,false);return end
         if s.ready_at and now>=s.ready_at then s.actor:SetActorTickEnabled(false);s.ready_at=nil end
         if s.active then return end
-        if s.actor.bHidden then return end
+        if s.actor.bHidden then Audio.quiet(a,true);return end
         -- Native death/reset callbacks can unhide actors after the first hold.
         -- Keep only the replicated avatar visible throughout multiplayer.
         hide(s)
@@ -150,6 +152,7 @@ function Waiting.equipment(pawn,actors)
         -- The replica owns driven weapon targets. Native weapon actor Tick
         -- updates grip/physics handles and must not fight those targets.
         if a:IsActorTickEnabled() then a:SetActorTickEnabled(false) end
+        Audio.quiet(a,false)
     end end
 end
 function Waiting.ensure(pawn)
@@ -219,6 +222,7 @@ function Waiting.candidate(pawn,ready_only)
     end
 end
 function Waiting.release()
+    Audio.release()
     last_scan=-1
     for _,s in pairs(saved) do
         if valid(s.actor) then

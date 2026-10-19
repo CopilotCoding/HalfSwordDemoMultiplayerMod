@@ -9,16 +9,18 @@ local function path(o) return o:GetFullName():gsub("^%S+ ","") end
 local function parameters(c)
     local store=c.OverrideParameters
     local entries,types,bytes={},{},{}
-    store.SortedParameterOffsets:ForEach(function(_,r)
-        local p=r:get()
+    local parameters=store.SortedParameterOffsets
+    for i=1,#parameters do
+        local p=parameters[i]
         local n,t=p.Name:ToString(),p.TypeDefHandle.RegisteredTypeIndex
         entries[#entries+1]={name=n,type=t,offset=p.Offset}
         if n=="User.Spawn Rate" then types[t]="F"
         elseif n=="User.LoopCount" then types[t]="I"
         elseif n=="User.Hit Direction" then types[t]="V"
         elseif n=="User.Color" then types[t]="C" end
-    end)
-    store.ParameterData:ForEach(function(_,r) if #bytes<4096 then bytes[#bytes+1]=string.char(r:get()) end end)
+    end
+    local data_bytes=store.ParameterData
+    for i=1,math.min(#data_bytes,4096)do bytes[#bytes+1]=string.char(data_bytes[i])end
     local data=table.concat(bytes)
     local result={}
     for _,p in ipairs(entries) do
