@@ -7,7 +7,7 @@ injury events represented on their PC. The mod adds an in-game multiplayer
 panel, shared rounds, a shared restart button and optional updates from the
 host.
 
-**Current build: 0.10.14 | Protocol: 19 | Players: 2**
+**Current build: 0.10.15 | Protocol: 19 | Players: 2**
 
 [Install](#install) | [Play](#play) | [Direct IP](#direct-ip) |
 [Updates](#optional-updates) | [Development summary](#development-summary)
@@ -27,6 +27,37 @@ controls. Native KO/death screens remain suppressed and selected gear is retaine
 across shared resets. Both PCs must run this version (protocol 19).
 
 ## Current build and validation
+
+0.10.15 repairs startup when the same extracted launcher is run twice.
+Repeat installations leave identical Lua scripts and the runtime bootstrap
+untouched. Changed files are written completely to a temporary file and then
+replaced atomically. The installer no longer exposes an intermediate shared
+runtime path while another game is starting. Cached Steam companions can also
+install an update from their own cache without a same-file copy error.
+
+F5 is registered during mod startup, before the game-thread timer starts.
+Its asynchronous handler only increments an existing counter; menu work stays
+on the game thread. Registering F5 while loading the menu from the timer gave
+the handler the timer's own Lua stack. The pinned loader runs its timer callback
+outside the mutex used by key callbacks, making that shared stack unsafe.
+The latest reported F5 crash had native Lua/struct-conversion frames. This
+change removes the shared-stack registration, without claiming every fatal
+error has the same cause.
+
+Validation: **164 automated checks passed**. The installer regression fails on
+the old temporary shared path and passes with the new bootstrap handling;
+unchanged script timestamps remain unchanged and failed replacements preserve
+the old complete file. Two copies of the real launcher entrypoint installed
+into one disposable game copy and entered a host/client match with separate
+runtime directories. Opponent weapon render meshes remained visible on both
+sides across three rounds. Repeated actual F5 key presses were also exercised
+in both visible windows. Test saves and the companion cache were redirected
+inside the workspace; no Steam or Downloads player copy was edited. The exact
+intermittent weapon disappearance has not been reliably reproduced, so the
+startup race is a repaired failure path rather than a proved explanation of
+every missing-weapon report.
+
+### Retained from 0.10.14
 
 0.10.14 addresses persistent opponent audio loops, missing downed give-up
 meters, remote shadow caching, equipment visibility and native object safety.

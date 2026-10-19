@@ -2,7 +2,7 @@
 from pathlib import Path
 import hashlib
 import json
-import shutil
+import tempfile
 import sys
 import zipfile
 from urllib.request import urlopen
@@ -11,6 +11,22 @@ ROOT = Path(__file__).resolve().parents[1]
 LOADER = "UE4SS_v3.0.1-1181-g83330635.zip"
 LOADER_SHA256 = "b9a166a756605b21058a64cde93bcaab1a855dba3553e5c7e6ce0fa8fdfad7b9"
 LOADER_URL = "https://github.com/UE4SS-RE/RE-UE4SS/releases/download/experimental/" + LOADER
+
+
+def write_if_changed(path: Path, data: bytes) -> None:
+    """Concurrent game starts must see a complete old or new script."""
+    if path.is_file() and path.read_bytes() == data:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=path.name+".", suffix=".install", delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(data)
+        temporary.replace(path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def file_sha256(path: Path) -> str:
@@ -99,28 +115,25 @@ def install(game: Path) -> None:
         for old in scripts.glob("*.lua"):
             if old.name not in current and old.name != "paths.lua":
                 old.unlink()
-    shutil.copytree(source, destination, dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns(*retired, "paths.lua"))
+    for path in source.rglob('*'):
+        if path.is_file() and path.name not in retired | {'paths.lua'}:
+            write_if_changed(destination/path.relative_to(source),path.read_bytes())
     runtime = ROOT / "runtime"
     runtime.mkdir(exist_ok=True)
     executable = binaries / "HalfSwordUE5-Win64-Shipping.exe"
     build_hash = file_sha256(executable)
-    (runtime / "build.json").write_text(json.dumps({"sha256": build_hash, "game": str(game)}, indent=2))
-    (destination / "Scripts/paths.lua").write_text(
-        "return {runtime = " + json.dumps(runtime.as_posix()) + ", scripts = "
-        + json.dumps((destination / "Scripts").as_posix()) + "}\n", encoding="utf-8"
-    )
+    build=json.dumps({"sha256": build_hash, "game": str(game)}, indent=2).encode('utf-8')
+    write_if_changed(runtime/'build.json',build)
     # Keep a complete, portable companion beside writable per-user runtime
     # data. Steam launches no longer depend on keeping the extracted ZIP folder.
     from bootstrap import cache_root,lua_paths
     from bundle import package_bytes,package_files
     companion=cache_root(game);companion.mkdir(parents=True,exist_ok=True)
     for name,data in package_files(package_bytes(ROOT)).items():
-        target=companion/name;target.parent.mkdir(parents=True,exist_ok=True)
-        if not target.exists()or target.read_bytes()!=data:target.write_bytes(data)
+        write_if_changed(companion/name,data)
     (companion/'runtime').mkdir(exist_ok=True)
-    shutil.copy2(runtime/'build.json',companion/'runtime/build.json')
-    (scripts/'paths.lua').write_text(lua_paths(scripts,companion,Path(sys.executable),game),encoding='utf-8')
+    write_if_changed(companion/'runtime/build.json',build)
+    write_if_changed(scripts/'paths.lua',lua_paths(scripts,companion,Path(sys.executable),game).encode('utf-8'))
     print(f"Installed HalfSwordMP into {destination}")
     print(f"Runtime data: {runtime}")
 

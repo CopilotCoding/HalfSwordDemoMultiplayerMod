@@ -71,6 +71,14 @@ local function diagnose()
     log("Discovery saved to " .. paths.runtime .. "/discovery.txt")
 end
 
+-- Register keys on the startup Lua stack, never from the timer's hook stack.
+-- The loader invokes input callbacks asynchronously while its timer executes
+-- without that input mutex. Sharing the hook stack can corrupt a native call.
+_G.HSMPUIToggleRequests=0
+RegisterKeyBind(Key.F5, function()
+    _G.HSMPUIToggleRequests=_G.HSMPUIToggleRequests+1
+end)
+
 RegisterKeyBind(Key.F8, function()
     _G.HSMPDiagnosticRequests=(_G.HSMPDiagnosticRequests or 0)+1
 end)
@@ -188,4 +196,4 @@ assert(type(LoopInGameThreadAfterFrames)=='function','HalfSwordMP requires its p
 _G.HSMPUpdate=update
 _G.HSMPUpdateHandle=LoopInGameThreadAfterFrames(1,update)
 
-log("0.10.14: native audio-loop cleanup, downed meter recovery and remote shadows. F8: discovery. F9: local pose preview.")
+log("0.10.15: concurrent launcher startup and F5 callback stack isolation. F8: discovery. F9: local pose preview.")

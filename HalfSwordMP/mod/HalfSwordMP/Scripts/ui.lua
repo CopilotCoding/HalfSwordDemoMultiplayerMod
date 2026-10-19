@@ -210,11 +210,5 @@ function UI.tick()
     local checked=automatic:IsChecked()
     if checked~=last_auto then last_auto=checked;request("auto_updates",checked) end
 end
-if not _G.HSMPUIKey then
-    _G.HSMPUIKey=true
-    RegisterKeyBind(Key.F5,function()
-        _G.HSMPUIToggleRequests=(_G.HSMPUIToggleRequests or 0)+1
-    end)
-end
 function UI.toggle() UI.set_open(not open) end
 return UI
