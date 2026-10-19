@@ -132,6 +132,8 @@ class Menu:
                             message=f"Round over — restarting in {seconds}s"
                         elif round_state["phase"]=="respawning":message="Starting next round — waiting for both fighters"
                         elif round_state["phase"]=="playing":message=f"Multiplayer round {round_state['id']} — your own fighter"
+                    rtt=state.get('rtt_ms')
+                    if type(rtt)in(int,float):message+=f' / RTT {rtt:.0f} ms'
                 except (OSError,ValueError):pass
             if self.bridge:
                 try:

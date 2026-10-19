@@ -147,7 +147,9 @@ function Waiting.equipment(pawn,actors)
                 p.component:SetVisibility(p.visible,false);p.component:SetHiddenInGame(p.hidden,false)
             end end
         end
-        if not a:IsActorTickEnabled() then a:SetActorTickEnabled(true) end
+        -- The replica owns driven weapon targets. Native weapon actor Tick
+        -- updates grip/physics handles and must not fight those targets.
+        if a:IsActorTickEnabled() then a:SetActorTickEnabled(false) end
     end end
 end
 function Waiting.ensure(pawn)

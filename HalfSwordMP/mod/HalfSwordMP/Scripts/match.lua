@@ -14,6 +14,7 @@ local selection
 local instance_selection
 local selected_loadout,loadout_pawn,loadout_after,loadout_done
 local armor_retries=0
+local paused_since
 local Equipment
 local retired_cards={}
 local next_menu_scan=0
@@ -104,12 +105,14 @@ end
 function Match.active() return active end
 function Match.playable() return ready end
 function Match.restart()
+    paused_since=nil
     -- LevelReset creates opening cards again. Their native Duel handler owns
     -- equipment/possession setup on every round, not only the first entry.
     ready=false;started=false;pending_entry=false;awaiting_card=true;reset_card_needed=true
     restore_selection()
 end
 function Match.leave()
+    paused_since=nil
     if valid(tutorial_instance) then tutorial_instance.Tutorial=tutorial_original end
     tutorial_instance,tutorial_original=nil,nil
     selection=nil
@@ -205,7 +208,15 @@ function Match.prepare(world)
 end
 function Match.ready(world,pawn)
     if awaiting_card then return false end
-    if not active or (not ready and helpers.GetGameplayStatics():IsGamePaused(world)) then return false end
+    if not active then return false end
+    local gs=helpers.GetGameplayStatics()
+    if gs:IsGamePaused(world)then
+        local clock=gs:GetRealTimeSeconds(world)
+        paused_since=paused_since or clock
+        if not ready and(not started or clock-paused_since<2)then return false end
+        gs:SetGamePaused(world,false)
+    end
+    paused_since=nil
     if not started then
         local mode=helpers.GetGameModeBase and helpers.GetGameModeBase()
         local duel=native_duel_type()

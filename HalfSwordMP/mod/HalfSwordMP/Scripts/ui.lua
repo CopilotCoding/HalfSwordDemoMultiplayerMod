@@ -3,6 +3,7 @@ _G.HSMPUICallbacks={} -- Disable the retired Deactivate route after a hot reload
 local helpers,paths=require("UEHelpers"),require("paths")
 local widget,canvas,panel,status,address,port,automatic,router,world_name,restart
 local open,sequence,ticks=true,0,0
+local receivers={}
 local last_auto,settings_loaded=false,false
 local previous_cursor
 local companion_time=0
@@ -66,6 +67,7 @@ local function button(parent,value,x,y,w,action)
     local receiver=router:AddComponentByClass(StaticFindObject("/Script/Engine.SceneComponent"),
         true,router:GetTransform(),false)
     receiver:SetComponentTickEnabled(false)
+    receivers[#receivers+1]=receiver
     _G.HSMPUIClickCallbacks[receiver:GetFullName()]=action
     b.OnClicked:Add(receiver,FName("ToggleActive"))
     return b
@@ -79,6 +81,7 @@ function UI.destroy()
     if valid(router) then router:K2_DestroyActor() end
     widget,canvas,panel,status,address,port,automatic,router=nil,nil,nil,nil,nil,nil,nil,nil
     restart=nil
+    receivers={}
     settings_loaded=false
 end
 local function create()
@@ -151,6 +154,13 @@ function UI.tick()
     local world=helpers.GetWorld()
     if not valid(world) then return end
     if world_name~=world:GetFullName() then UI.destroy();world_name=world:GetFullName() end
+    if valid(widget)then
+        local intact=valid(router)
+        for _,receiver in ipairs(receivers)do if not valid(receiver)then intact=false;break end end
+        -- Native LevelReset can remove actors/components without replacing
+        -- viewport widgets. Rebuild their delegate recipients together.
+        if not intact then UI.destroy()end
+    end
     if not valid(widget) then create() end
     if not valid(widget) then return end
     if not widget:IsInViewport() then widget:AddToViewport(10000) end

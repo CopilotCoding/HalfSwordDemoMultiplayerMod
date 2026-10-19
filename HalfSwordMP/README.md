@@ -7,10 +7,10 @@ injury events represented on their PC. The mod adds an in-game multiplayer
 panel, shared rounds, a shared restart button and optional updates from the
 host.
 
-**Current build: 0.10.11 · Protocol: 17 · Players: 2**
+**Current build: 0.10.11 Â· Protocol: 17 Â· Players: 2**
 
-[Install](#install) · [Play](#play) · [Direct IP](#direct-ip) ·
-[Updates](#optional-updates) · [Development summary](#development-summary)
+[Install](#install) Â· [Play](#play) Â· [Direct IP](#direct-ip) Â·
+[Updates](#optional-updates) Â· [Development summary](#development-summary)
 
 ## Overview
 
@@ -24,9 +24,57 @@ Both peers use the same arena coordinates. The guest's fighter is constructed at
 the opposite native spawn; world geometry and blood positions are not mirrored.
 The other fighter follows measured poses instead of independently replaying
 controls. Native KO/death screens remain suppressed and selected gear is retained
-across shared resets. Both PCs must run this version (protocol 18).
+across shared resets. Both PCs must run this version (protocol 19).
 
 ## Current build and validation
+
+0.10.13 fixes the extra empty give-up outline that appeared halfway through a
+hold. Native HUDs and meters can run their event graphs with widget ticking
+disabled; this setting no longer makes the mod mistake a live meter for a
+retired one and start another. One native meter owns the hold. Releasing G
+cancels it, and late callbacks cannot revive retired layers. Duplicate hurt
+HUDs are also retired after a current-life HUD is available. The user confirmed
+that the give-up UI now looks correct.
+
+A living fighter can still hold G after KO/incapacity has been latched. Native
+player identity is preserved for that fighter. Input recovery restores stale
+pause, time dilation and ignored movement/look without flushing held keys, while
+respecting open F5 and native settings/pause panels. F5 recreates its bindings
+if their native router or receiver components disappear.
+
+Shared restart no longer depends on both pose files being available at the
+instant of the request. The coordinator retains the current fighter life IDs
+and still waits for new lives before resuming. Existing client retries and
+six-second respawn recovery remain available. Initial setup protects the local
+fighter before opponent/loadout work; contact capture is armed after the new
+opponent has been positioned and a half-second settling interval has passed.
+
+Held weapon interpolation now preserves the measured relationship to the
+interpolated hand, reducing grip separation during fast swings. Driven remote
+weapons keep their actor tick disabled instead of alternating between native
+updates and received targets. Native combat physics and free dropped-weapon
+movement are retained. The user reported that the fast-swing issue looks fixed.
+
+The multiplayer panel now shows measured **RTT** (round-trip time). It uses
+session-checked ping replies, rather than estimating delay from frame rate.
+Both PCs must update for protocol 19. Lower graphics settings substantially
+reduced the brother's reported combat slowdown; this is a player report, not a
+measured frame-rate improvement from the mod.
+
+Validation: **156 automated checks passed**, covering real UDP, restart requests
+with missing pose files, downed surrender, native-widget lifetime, input recovery,
+held-weapon arcs and RTT validation. In two visible disposable game windows,
+each peer cancelled two partial holds and completed a full hold with at most
+one visible meter. Both games returned healthy after the shared resets. The
+host and client each completed a hold after a latched KO and each requested a
+shared reset through the native multiplayer button binding, reaching round 7.
+The paired recovery checks also deliberately blocked input and paused/slowed the
+world, duplicated the hurt HUD and destroyed the F5 router. Input recovered,
+one HUD remained and the menu bindings were recreated. Graphics/settings Escape
+still has automated coverage; a complete visual test of that interaction is not
+claimed. No numerical Internet latency or laptop FPS improvement is claimed.
+
+### Retained from 0.10.12
 
 0.10.12 checks that the saved armour slots and clothing meshes are present
 before marking a respawn ready. Missing armour is retried through native setup;
@@ -78,7 +126,7 @@ edges in downed states are routed to the native handlers, preserving the game's
 meter. Escape toggles one native pause menu, and Resume retires its input callbacks.
 Round setup rejects previous-life opponents and retries transient renderer failures.
 
-Validation: **144 automated checks passed**, including client requests over
+The 0.10.12 validation passed **144 automated checks**, including client requests over
 real UDP, duplicate resets, a stalled respawn retry, incomplete armour, native
 hold/cancel discovery, settings focus and widget lifetimes. In two visible native
 game windows, both fighters cancelled partial holds; healthy host and injured,
@@ -102,7 +150,7 @@ The user confirmed enemy pickup and the final appearance in play.
 
 Unused input capture/transmission and redundant scans/material work have been
 removed. This is not a measured laptop FPS or Internet latency guarantee; remaining
-client lag needs testing on the second PC. Update **both PCs** for protocol 18.
+client performance still depends on the second PC. Update **both PCs** for protocol 19.
 
 ### Previous release checks
 
@@ -168,7 +216,7 @@ on one PC with native generated loadouts, not a controlled laptop FPS or Interne
 latency measurement. Native painting/physics can still cause individual hitches.
 Detached-object consistency and long-session UE4SS stability remain unverified.
 
-**User playtest update — 18 October 2026:** The user confirms contact stutter is
+**User playtest update â€” 18 October 2026:** The user confirms contact stutter is
 gone, grabbing and wounds work, and dismemberment works on both peers well enough
 for combat. Exact wound/sever matching is not confirmed. Internet play with their
 brother had very little perceived lag. Native result UI is working, and manual

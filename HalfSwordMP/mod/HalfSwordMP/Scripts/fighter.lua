@@ -115,6 +115,10 @@ function Fighter.update(local_pawn,renderer,waiting)
         lease.appearance_dirty=true
     end
     if not lease.replica then lease.replica=Replica.create(p,lease.equipment)end
+    if renderer.frame and not lease.last_frame then
+        local first=renderer.frame()
+        if first then Replica.update(lease.replica,first);lease.last_frame=first end
+    end
     Equipment.bind(lease.equipment,value,rows)
     -- The same modular class can spawn with different blade materials. Use
     -- the owner's native sharpness, rigidity and other computed properties.

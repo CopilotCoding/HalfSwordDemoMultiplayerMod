@@ -24,7 +24,7 @@ from controls import validate_input,read_input,input_text
 MAGIC = b"HSMPD"
 MAX_PACKET = 65536
 MAX_DATAGRAM = 1200
-FRAGMENT = b"HSF18"
+FRAGMENT = b"HSF19"
 CHUNK = 1100
 TIMEOUT = 5.0
 NONCE = re.compile(r"^[a-f0-9]{32}$")
@@ -154,6 +154,12 @@ class Peer:
         self.remote_restart_request = None
         self.remote_pose_counter = 0
         self.connected = False
+        self.probes={};self.rtt_ms=None;self.rtt_samples=[]
+
+    def ping(self,now):
+        self.probes={token:stamp for token,stamp in self.probes.items()if now-stamp<TIMEOUT}
+        token=secrets.token_hex(16);self.probes[token]=now
+        return {'kind':'ping','build':self.build,'session':self.session,'peer':self.remote_session,'token':token}
 
     def hello(self) -> dict:
         return {"kind": "hello", "build": self.build, "session": self.session}
@@ -176,6 +182,16 @@ class Peer:
         if not isinstance(session, str) or not NONCE.fullmatch(session):
             return []
         kind = message.get("kind")
+        if kind in ('ping','pong'):
+            token=message.get('token')
+            if (not self.connected or address!=self.address or session!=self.remote_session
+                    or message.get('peer')!=self.session or not isinstance(token,str)or not NONCE.fullmatch(token)):return []
+            if kind=='ping':
+                return [({'kind':'pong','build':self.build,'session':self.session,'peer':session,'token':token},address)]
+            sent=self.probes.pop(token,None)
+            if sent is not None and 0<=now-sent<TIMEOUT:
+                self.rtt_ms=(now-sent)*1000;self.rtt_samples=(self.rtt_samples+[self.rtt_ms])[-20:]
+            return []
         if self.role == "host" and kind == "hello":
             if self.address is not None:
                 # A repeated hello may be a lost welcome, but cannot replace an active session.
@@ -249,6 +265,7 @@ class Peer:
         self.remote_round = None
         self.remote_pose_counter += 1
         self.connected = False
+        self.probes={};self.rtt_ms=None;self.rtt_samples=[]
         self.pending.clear()
         return True
 
@@ -288,6 +305,7 @@ class Bridge:
         self.round_state=None
         self.restart_request=None;self.restart_sequence=0
         self.round_mark=None;self.round_mark_at=time.monotonic()
+        self.last_ping=-1e9
         self.frame=None
         self.arena_frame=ArenaFrame()
         self.cached_local_pose=None;self.cached_local_pose_at=-1e9
@@ -331,7 +349,7 @@ class Bridge:
 
     def respawn_retry_ready(self,now=None):
         now=time.monotonic()if now is None else now;r=self.round_state
-        return bool(r and r['phase']=='respawning'and now-self.round_mark_at>=6
+        return bool(r and r['phase']in('respawning','waiting')and now-self.round_mark_at>=6
             and(not self.rounds or self.rounds.id==r['id']))
 
     def restart_ready(self,now=None):
@@ -343,7 +361,6 @@ class Bridge:
         if self.peer.role=='join':
             r=self.peer.remote_round;local=self.local_pose(time.monotonic());remote=self.peer.remote_pose
             if not self.restart_ready():return False
-            if r['phase']!='respawning'and(not local or not remote or local['map']!=remote['map']):return False
             self.restart_sequence+=1
             self.restart_request={'session':r['session'],'round':r['id'],'request':self.restart_sequence}
             self.last_send=-1e9;return True
@@ -382,6 +399,8 @@ class Bridge:
         if self.peer.role == "join" and self.peer.address is None and now - self.last_hello >= 0.5:
             self.send(self.peer.hello(), self.peer.target)
             self.last_hello = now
+        if self.peer.connected and self.peer.address is not None and now-self.last_ping>=1:
+            self.send(self.peer.ping(now),self.peer.address);self.last_ping=now
         if self.peer.address is not None and now - self.last_send >= 1/30:
             damage=read_damage(self.runtime / "local.damage")
             local_pose=self.local_pose(now)
@@ -446,6 +465,9 @@ class Bridge:
                       "state_target_hz":30,"input_target_hz":30,
                       "remote_controls":self.peer.remote_input_counter,
                       "round":self.round_state,
+                      "rtt_ms":self.peer.rtt_ms,
+                      "rtt_min_ms":min(self.peer.rtt_samples)if self.peer.rtt_samples else None,
+                      "rtt_max_ms":max(self.peer.rtt_samples)if self.peer.rtt_samples else None,
                       "same_map": same_map,
                       "received_snapshots": self.peer.remote_pose_counter,
                       "rejected_packets": self.rejected, "send_errors": self.send_errors,

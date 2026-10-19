@@ -34,6 +34,7 @@ local Effects=dofile(require("paths").scripts.."/effects.lua")
 local Assets=dofile(require("paths").scripts.."/assets.lua")
 local Geometry=dofile(require("paths").scripts.."/geometry.lua")
 local Interpolation=dofile(require("paths").scripts.."/interpolation.lua")
+local Held=dofile(require('paths').scripts..'/held_pose.lua')
 local Equipment=dofile(require("paths").scripts.."/equipment.lua")
 
 local function valid(obj) return obj ~= nil and obj:IsValid() end
@@ -408,6 +409,7 @@ local function update(runtime, pawn, local_text, remote_text)
         end
     end
     remote_equipment,remote_rows=Equipment.read(rows),rows
+    Held.prepare(frame,remote_equipment)
     remote_drops,remote_pickups=Dropped.read(rows)
     -- Native weapon Blueprints provide the collision shapes for this protocol.
     -- The former generic shapes are retained only for old local preview data.

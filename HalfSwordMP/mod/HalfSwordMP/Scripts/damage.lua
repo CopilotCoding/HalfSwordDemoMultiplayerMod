@@ -9,6 +9,7 @@ local captured,applied,errors,severs=0,0,0,0
 local next_publish,published_sequence=0,-1
 local replay_queue,last_read_text,last_published_text={},nil,nil
 local queue_peak,replay_max_ms=0,0
+local arm_after=0
 local function valid(o)return o~=nil and o:IsValid()end
 local function same(a,b)return valid(a)and valid(b)and a:GetFullName()==b:GetFullName()end
 local function finite(n,b)return type(n)=='number'and n==n and math.abs(n)<=b end
@@ -25,20 +26,30 @@ function Damage.stop()
  events,sequence,received,boxes={},0,{},{}
  replay_queue,last_read_text,last_published_text={},nil,nil
  next_publish,published_sequence=0,-1
+ arm_after=0
  _G.HSMPComplexDispatch=nil;_G.HSMPDamageDispatch=nil;_G.HSMPSeverDispatch=nil;clear_file()
+end
+function Damage.protect(pawn)
+ if not valid(pawn)then return end
+ if not same(pawn,own)then Damage.stop();own=pawn;original_invulnerable=pawn.Invulnerable end
+ -- Protection starts as soon as this life is possessed, before loadout,
+ -- native AI cleanup or the remote replica has finished initializing.
+ pawn.Invulnerable=true
 end
 function Damage.configure(pawn,other,owner_id,target_id,identifier,resolver,frame_getter)
  if not same(pawn,own)then Damage.stop();original_invulnerable=pawn.Invulnerable end
  if not same(other,remote)or target~=target_id then
   events={};replay_queue={};received={};last_read_text=nil;Sever.reset()
   epoch=string.format('%08x%08x%08x%08x',os.time(),math.random(1,0x7fffffff),math.random(1,0x7fffffff),math.random(1,0x7fffffff))
+  arm_after=os.clock()+.5
  end
  own,remote,owner,target,identify,resolve,bone_frame=pawn,other,owner_id,target_id,identifier,resolver,frame_getter
  -- Native local contacts must not damage the owner a second time. Its exact
  -- deduplicated injury event alone bypasses this flag.
  own.Invulnerable=true
+ if valid(remote)then remote.Invulnerable=os.clock()<arm_after end
  _G.HSMPDamageDispatch=function(context,...)
-  if not same(context,remote)or not identify then return end
+  if os.clock()<arm_after or not same(context,remote)or not identify then return end
   local a={...};if #a<16 then return end
   local source=a[13]:get();local source_id=valid(source)and identify(source)
   if not source_id then return end
@@ -65,7 +76,7 @@ function Damage.configure(pawn,other,owner_id,target_id,identifier,resolver,fram
   end)}
  end
  _G.HSMPSeverDispatch=function(context,...)
-  if not same(context,remote)or not identify or not bone_frame then return end
+  if os.clock()<arm_after or not same(context,remote)or not identify or not bone_frame then return end
   local e=Sever.capture(context,{...},identify,bone_frame,target)
   if e then sequence=sequence+1;events[#events+1]={sever=e,seq=sequence,time=os.clock()};if #events>32 then table.remove(events,1)end end
  end

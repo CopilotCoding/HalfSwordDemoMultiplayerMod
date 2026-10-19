@@ -40,6 +40,7 @@ function Interpolation.sample(state,now)
             result[kind][id]=a and Interpolation.transform(a,b,t) or b
         end
     end
+    if state.to.grip_interpolate then state.to.grip_interpolate(result,state.from,state.to,t,Interpolation.transform)end
     state.sample_time,state.sample_result=now,result
     return result
 end

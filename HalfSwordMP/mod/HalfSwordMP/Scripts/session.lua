@@ -8,6 +8,7 @@ local Damage=dofile(paths.scripts.."/damage.lua")
 local Injury=dofile(paths.scripts..'/injury.lua')
 local Clothing=dofile(paths.scripts..'/clothing.lua')
 local Pause=dofile(paths.scripts..'/pause.lua')or{}
+local Recovery=dofile(paths.scripts..'/input_recovery.lua')or{}
 _G.HSMPPause=Pause
 
 local Match=dofile(paths.scripts.."/match.lua")
@@ -24,6 +25,7 @@ local injury_state,injury_attacker
 local function valid(o) return o~=nil and o:IsValid() end
 local function same(a,b) return valid(a) and valid(b) and a:GetFullName()==b:GetFullName() end
 function Session.stop()
+    if Recovery.reset then Recovery.reset()end
     if _G.HSMPDropped and _G.HSMPDropped.reset then _G.HSMPDropped.reset()end
     if Pause.reset then Pause.reset()end
     Clothing.reset()
@@ -172,7 +174,12 @@ function Session.tick(pawn)
         end
     end
     if not valid(local_pawn) then return role end
+    if Damage.protect then Damage.protect(local_pawn)end
+    -- Quarantine native AI and its old weapons during the loadout wait, not
+    -- only after the new fighter has already become vulnerable.
+    Waiting.hold(local_pawn)
     if not Match.ready(world,local_pawn) then return role end
+    if Recovery.tick then Recovery.tick(local_pawn,helpers.GetGameplayStatics():GetRealTimeSeconds(world),true)end
     if input_pawn~=local_pawn:GetFullName()then
         local pc=helpers.GetPlayerController()
         if valid(pc)and same(pc.Pawn,local_pawn)then

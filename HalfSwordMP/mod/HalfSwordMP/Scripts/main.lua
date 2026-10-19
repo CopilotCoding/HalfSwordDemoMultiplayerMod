@@ -98,6 +98,10 @@ local function update()
     if pending then return end
     pending = true
         local started=os.clock()
+        if _G.HSMPDevFrame then
+            local dev_ok,dev_error=pcall(_G.HSMPDevFrame)
+            if not dev_ok then _G.HSMPDevFrame=nil;log('Development frame: '..tostring(dev_error))end
+        end
         if _G.HSMPSession and _G.HSMPSession.update_ui then
             local ui_ok,ui_error=pcall(_G.HSMPSession.update_ui)
             if not ui_ok and tostring(ui_error)~=last_error then last_error=tostring(ui_error);log('Native UI: '..last_error)end
@@ -111,7 +115,7 @@ local function update()
         _G.HSMPPreviewRequests=0
         draw_tick=draw_tick+1
         if started<next_full_update then
-            local ok,err=pcall(function()if not renderer_failed then Pose.animate() end end)
+            local ok,err=xpcall(function()if not renderer_failed then Pose.animate() end end,debug.traceback)
             local elapsed=(os.clock()-started)*1000
             draw_total,draw_max,draw_count=draw_total+elapsed,math.max(draw_max,elapsed),draw_count+1
             if draw_count%120==0 then
@@ -160,7 +164,7 @@ local function update()
             local source=_G.HSMPSession and _G.HSMPSession.capture_pawn() or pawn
             if not valid(source) then source=pawn end
             if not renderer_failed then
-                local render_ok, render_error = pcall(Pose.update, paths.runtime, source, text)
+                local render_ok, render_error = xpcall(Pose.update,debug.traceback,paths.runtime,source,text)
                 if not render_ok then
                     render_failed(render_error)
                 else renderer_failures=0 end
@@ -184,4 +188,4 @@ assert(type(LoopInGameThreadAfterFrames)=='function','HalfSwordMP requires its p
 _G.HSMPUpdate=update
 _G.HSMPUpdateHandle=LoopInGameThreadAfterFrames(1,update)
 
-log("0.10.12: native menus, consistent surrender and shared restart requests. F8: discovery. F9: local pose preview.")
+log("0.10.13: downed surrender, round recovery and coherent held poses. F8: discovery. F9: local pose preview.")
