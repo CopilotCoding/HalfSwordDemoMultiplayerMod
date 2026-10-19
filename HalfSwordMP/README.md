@@ -1,499 +1,201 @@
 # HalfSwordMP
 
-HalfSwordMP brings experimental two-player fights to Half Sword Demo. Select
-your fighter, host a match and have a friend connect directly by IP. Each person
-controls their own native fighter, with the other player's body, equipment and
-injury events represented on their PC. The mod adds an in-game multiplayer
-panel, shared rounds, a shared restart button and optional updates from the
-host.
+**Experimental multiplayer for Half Sword Demo · 2 players · Version 0.10.15 · Protocol 19**
 
-**Current build: 0.10.15 | Protocol: 19 | Players: 2**
+## About the mod
 
-[Install](#install) | [Play](#play) | [Direct IP](#direct-ip) |
-[Updates](#optional-updates) | [Development summary](#development-summary)
+HalfSwordMP turns the demo's arena into a two-player fight. Choose your fighter
+and equipment, host a match, and have a friend join by IP over LAN or the
+Internet. Use the game's normal controls and combat, then start another round
+together. No room code or preliminary single-player fight is needed.
 
-## Overview
+Each PC controls its own native fighter. A native opponent represents the other
+player, following their transmitted body and weapon poses. The game handles
+combat contact; the mod relays injury and severing events to the injured
+player's PC. The host coordinates round resets. UE4SS runs the Lua mod inside
+the game, and a Python companion handles networking and updates.
 
-Experimental direct-IP multiplayer for matching Half Sword Demo installations.
-Each PC controls its own native fighter. The other player appears as a native
-Willie opponent, equipped with that player's worn armor and native weapons and
-whose native collision bodies follow that player's body and weapon snapshots.
-There is no room code.
-
-Both peers use the same arena coordinates. The guest's fighter is constructed at
-the opposite native spawn; world geometry and blood positions are not mirrored.
-The other fighter follows measured poses instead of independently replaying
-controls. Native KO/death screens remain suppressed and selected gear is retained
-across shared resets. Both PCs must run this version (protocol 19).
-
-## Current build and validation
-
-0.10.15 repairs startup when the same extracted launcher is run twice.
-Repeat installations leave identical Lua scripts and the runtime bootstrap
-untouched. Changed files are written completely to a temporary file and then
-replaced atomically. The installer no longer exposes an intermediate shared
-runtime path while another game is starting. Cached Steam companions can also
-install an update from their own cache without a same-file copy error.
-
-F5 is registered during mod startup, before the game-thread timer starts.
-Its asynchronous handler only increments an existing counter; menu work stays
-on the game thread. Registering F5 while loading the menu from the timer gave
-the handler the timer's own Lua stack. The pinned loader runs its timer callback
-outside the mutex used by key callbacks, making that shared stack unsafe.
-The latest reported F5 crash had native Lua/struct-conversion frames. This
-change removes the shared-stack registration, without claiming every fatal
-error has the same cause.
-
-Validation: **164 automated checks passed**. The installer regression fails on
-the old temporary shared path and passes with the new bootstrap handling;
-unchanged script timestamps remain unchanged and failed replacements preserve
-the old complete file. Two copies of the real launcher entrypoint installed
-into one disposable game copy and entered a host/client match with separate
-runtime directories. Opponent weapon render meshes remained visible on both
-sides across three rounds. Repeated actual F5 key presses were also exercised
-in both visible windows. Test saves and the companion cache were redirected
-inside the workspace; no Steam or Downloads player copy was edited. The exact
-intermittent weapon disappearance has not been reliably reproduced, so the
-startup race is a repaired failure path rather than a proved explanation of
-every missing-weapon report.
-
-### Retained from 0.10.14
-
-0.10.14 addresses persistent opponent audio loops, missing downed give-up
-meters, remote shadow caching, equipment visibility and native object safety.
-Opponent breathing, dying and weapon-slide loops are stopped on driven actors;
-finite impact/pain sounds remain native. If native G input repeatedly fails to
-create a meter, the mod opens the game's own meter and leaves progression and
-cancellation to its native event graph. Only one meter owns a hold.
-
-Remote animated meshes invalidate their shadow cache. Camera-specific material
-hide/fade parameters no longer travel to opponents or dropped weapons, and
-dropped weapon component lists refresh after native equipment changes. These
-repairs do not establish that every intermittent invisible fighter or clothing
-case is resolved; the reported pickup/drop disappearance was not reliably
-reproduced in the native fixture.
-
-Native arrays now use bounded indexed reads. The pinned UE4SS source explicitly
-flags a stack-corruption crash in its array callback implementation. Candidate
-crash dumps showed native Lua/object access failures, including a reproduced
-client crash during development. This change removes that callback path from
-the mod; it does not prove all reported fatal errors have the same cause.
-F5 also rebuilds when a child widget becomes invalid.
-
-Multiple launcher windows are supported with separate runtime files. After one
-installation through **Start Multiplayer.cmd**, opening the game through Steam
-automatically starts a hidden companion for that game window. It exits with the
-game. A cached companion keeps this working after the extracted folder moves.
-Python must remain installed. Pending updates wait for all windows using the
-same installed executable to close.
-
-Validation: **163 automated checks passed**. Two visible disposable native game
-windows completed 100 F5 toggles each, recovered deliberately invalid menu
-children, completed missing-meter fallback holds with one meter, and reached
-round 7 through healthy shared resets. Injected persistent native audio loops
-stopped while a finite sound retained its volume. Remote meshes used the intended
-shadow setting; a visual trailing-shadow comparison remains unconfirmed. A
-two-minute stress run performed 580/579 full Lua collections, repeated appearance
-captures and 60 further F5 toggles per peer; both remained connected with the
-opponent visible. Two windows from the same executable independently started
-companions and connected on one destination port without a launcher. This was
-an executable launch using the installed bootstrap, not a Steam UI click.
-Long sessions and the brother's machine still need playtesting. No numerical
-Internet latency or laptop FPS improvement is claimed.
-
-### Retained from 0.10.13
-
-0.10.13 fixes the extra empty give-up outline that appeared halfway through a
-hold. Native HUDs and meters can run their event graphs with widget ticking
-disabled; this setting no longer makes the mod mistake a live meter for a
-retired one and start another. One native meter owns the hold. Releasing G
-cancels it, and late callbacks cannot revive retired layers. Duplicate hurt
-HUDs are also retired after a current-life HUD is available. The user confirmed
-that the give-up UI now looks correct.
-
-A living fighter can still hold G after KO/incapacity has been latched. Native
-player identity is preserved for that fighter. Input recovery restores stale
-pause, time dilation and ignored movement/look without flushing held keys, while
-respecting open F5 and native settings/pause panels. F5 recreates its bindings
-if their native router or receiver components disappear.
-
-Shared restart no longer depends on both pose files being available at the
-instant of the request. The coordinator retains the current fighter life IDs
-and still waits for new lives before resuming. Existing client retries and
-six-second respawn recovery remain available. Initial setup protects the local
-fighter before opponent/loadout work; contact capture is armed after the new
-opponent has been positioned and a half-second settling interval has passed.
-
-Held weapon interpolation now preserves the measured relationship to the
-interpolated hand, reducing grip separation during fast swings. Driven remote
-weapons keep their actor tick disabled instead of alternating between native
-updates and received targets. Native combat physics and free dropped-weapon
-movement are retained. The user reported that the fast-swing issue looks fixed.
-
-The multiplayer panel now shows measured **RTT** (round-trip time). It uses
-session-checked ping replies, rather than estimating delay from frame rate.
-Both PCs must update for protocol 19. Lower graphics settings substantially
-reduced the brother's reported combat slowdown; this is a player report, not a
-measured frame-rate improvement from the mod.
-
-Validation: **156 automated checks passed**, covering real UDP, restart requests
-with missing pose files, downed surrender, native-widget lifetime, input recovery,
-held-weapon arcs and RTT validation. In two visible disposable game windows,
-each peer cancelled two partial holds and completed a full hold with at most
-one visible meter. Both games returned healthy after the shared resets. The
-host and client each completed a hold after a latched KO and each requested a
-shared reset through the native multiplayer button binding, reaching round 7.
-The paired recovery checks also deliberately blocked input and paused/slowed the
-world, duplicated the hurt HUD and destroyed the F5 router. Input recovered,
-one HUD remained and the menu bindings were recreated. Graphics/settings Escape
-still has automated coverage; a complete visual test of that interaction is not
-claimed. No numerical Internet latency or laptop FPS improvement is claimed.
-
-### Retained from 0.10.12
-
-0.10.12 checks that the saved armour slots and clothing meshes are present
-before marking a respawn ready. Missing armour is retried through native setup;
-weapon-only changes still preserve the existing clothing and wounds. Match entry
-also waits for the native preview's configured armour slots before saving it.
-
-**Restart round is available to both players.** The client's request travels to
-the host, which issues one shared reset. Requests repeat until acknowledged by a
-new round, and stale requests cannot reset a later round. During respawn the
-button waits six seconds, then permits another shared attempt if setup stalls.
-
-Surrender keeps the native **hold G** meter, available while healthy or downed;
-release cancels. The mod discovers the widget created by the native G handler,
-including cooked ticks that bypass the event-graph hook. It does not construct a
-replacement meter or complete surrender from the native hold-start flag. Old
-widgets are retired at the next life. A full meter starts the shared reset after
-0.25 seconds; KO/death retains the three-second countdown. Native respawn still
-needs time to load the fighters and their saved gear.
-
-Pause and surrender-widget changes are deferred out of native Blueprint hooks.
-F5 preserves native settings below it and restores their focus when closed.
-Escape over settings retires the extra pause layer and uses the native Back
-button. Opening a menu cancels a held surrender. Opponent maintenance also
-repairs hidden body render flags without rebuilding clothes or injuries.
-Interpolation reuses samples from the same frame and skips unchanged native
-physics targets; the pose delivery target remains 30 Hz.
-
-Returning to the main menu now leaves the current match and clears its saved
-selection. Change your fighter/gear there, then choose **Enter multiplayer match**
-again. A visible main menu is never treated as an automatic re-entry request.
-The native hurt hint stays visible through partial recovery while serious
-injuries remain, even if regenerating health crosses its original display threshold.
-
-The selected gear work from 0.10.10 saves actual clothing colours, shield material/pattern and
-all seven native weapon slots, including sheathed sidearms. Native respawn can
-reroll cosmetic values; the saved construction and appearance are restored after
-setup finishes. Weapon material copying also preserves preset shield patterns
-while keeping the receiver's native wound textures.
-
-Enemy-dropped weapons can now be picked up with the normal **E/Q** controls
-when nearby and that hand is free. The originating peer validates the transfer;
-the receiving game uses native hand setup to create a usable weapon. A transferred
-drop disappears from its previous location on both peers. Ground movement still
-comes from the originating game's simulation, rather than one shared physics world.
-
-KO/death and confirmed incapacity end the round; resting after a recoverable fall
-does not. Failed recovery attempts are checked over time. Missing G press/release
-edges in downed states are routed to the native handlers, preserving the game's
-meter. Escape toggles one native pause menu, and Resume retires its input callbacks.
-Round setup rejects previous-life opponents and retries transient renderer failures.
-
-The 0.10.12 validation passed **144 automated checks**, including client requests over
-real UDP, duplicate resets, a stalled respawn retry, incomplete armour, native
-hold/cancel discovery, settings focus and widget lifetimes. In two visible native
-game windows, both fighters cancelled partial holds; healthy host and injured,
-downed client holds then completed with unchanged control yaw and shared resets.
-Across repeated resets, both sampled local outfits had all six selected armour
-slots and the expected clothing meshes, and both opponents returned. A client
-restart command reset both games. Deliberately hidden opponent bodies recovered
-on both peers, and each game completed 100 F5 open/close cycles without a crash.
-Computer Use was stopped with Escape before a visual graphics-settings check
-could finish. That interaction has automated coverage, but is not claimed as
-verified in the running game. No numerical laptop FPS improvement is claimed.
-
-In the preceding 0.10.10 visible native game windows,
-three successive resets (KO, unrecoverable downing and downed surrender) retained
-the exact sampled weapon construction, armour classes, clothing colours, shield
-materials and sidearms. Each opponent's sampled clothing and hand appearance
-matched its owner. Both opponents returned, with movement/look input enabled.
-A one-shot renderer failure recovered without another reset. Repeated native
-Escape/Resume tests left zero pause layers and restored input on both peers.
-The user confirmed enemy pickup and the final appearance in play.
-
-Unused input capture/transmission and redundant scans/material work have been
-removed. This is not a measured laptop FPS or Internet latency guarantee; remaining
-client performance still depends on the second PC. Update **both PCs** for protocol 19.
-
-### Previous release checks
-
-0.10.9 keeps tracking each fighter's native weapons after they are dropped.
-The other PC displays their individual mesh parts, materials, sizes and measured
-world transforms, including while the native opponent is active. Picking a weapon
-back up removes its dropped representation; a new fighter life clears old drops.
-The owning game still simulates the dropped weapon. This adds visibility and pose
-replication; shared pickup ownership was added in 0.10.10. Full shared ground-object
-physics is not implemented.
-Protocol 16 requires updating both PCs.
-
-The 0.10.9 suite passed **125 checks**. In two visible native game windows, the
-host received three visible mesh parts from the client's dropped spear and the
-client received five from the host's dropped modular sword. All sampled mesh
-positions matched their received poses. The user also confirmed the drop fix in
-play. Native surrender was exercised and both peers returned to shared round 2
-without leaving the arena; the existing give-up path needed no gameplay change.
-Native knockback remains unchanged: injury replay already supplies zero impulse,
-velocity and shockwave, and broader physics tuning was outside this fix.
-
-0.10.8 makes attached worn garments share their native fighter's visibility
-bounds on both peers, including each local fighter. Some copy-pose garments kept
-standing/spawn bounds while the ragdoll bones moved elsewhere; those bounds could
-exclude the visible pants/shoes after a fall. This change uses Unreal's native
-parent-bounds flag. It preserves native material instances, wound masks, hidden
-bones, clothing visibility and detached limbs rather than rebuilding garments.
-Newly created garments are checked four times per second. Weapon-only changes
-still keep the existing clothing and saved dyes from 0.10.7.
-
-Incoming native injuries are queued and deduplicated. Each update processes at
-most four events and stops starting further replays after a two-millisecond
-budget. One native call can itself exceed that budget; wound painting stays
-owned by the game. Accepted injuries are retained for later updates. Pending
-severs reject destroyed query helpers or weapon components before native calls.
-No contact impulses or independent combat calculations are replayed.
-
-Unchanged damage files are no longer rewritten or parsed repeatedly. The companion
-publishes round transitions immediately, quantizes countdown file updates to
-100 ms, and refreshes unchanged round state twice per second. This avoids replacing
-the same hot file at 30 Hz. Pose, input and network injury delivery still target
-30 updates/s. No protocol layout changed (protocol 15).
-
-Native injury/sever replay, clothing dyes, selected loadouts, host Restart round,
-and incapacity reset rules from 0.10.7 are retained. A healthy fall alone does not
-end the round. Critical leg injury stays recorded during that fall so native
-regeneration cannot cancel the two-second incapacity confirmation.
-
-Validation: 122 automated checks passed, including hit-burst budgeting without
-losing/duplicating damage, native component lifetime checks, garment bounds,
-round publication freshness, transport, resets and updates. Visible local host
-and client windows were used for native damage and knockdown checks. Both peers
-processed over 100 injected native damage events, including a 16-event burst;
-queues emptied and no native injury replay errors were recorded. After damage
-and a fall, all sampled worn garments kept valid materials, stayed visible, and
-had bounds matching their body. Clothing was present in the foreground views
-checked on both peers. The final additional camera-angle comparison was interrupted
-by Escape, so every intermittent clothing case is not conclusively ruled out.
-
-The repeated-hit workload averaged about 33-34 ms per frame in the candidate,
-versus about 41 ms in the previous local run. These were two visible game windows
-on one PC with native generated loadouts, not a controlled laptop FPS or Internet
-latency measurement. Native painting/physics can still cause individual hitches.
-Detached-object consistency and long-session UE4SS stability remain unverified.
-
-**User playtest update â€” 18 October 2026:** The user confirms contact stutter is
-gone, grabbing and wounds work, and dismemberment works on both peers well enough
-for combat. Exact wound/sever matching is not confirmed. Internet play with their
-brother had very little perceived lag. Native result UI is working, and manual
-give-up was confirmed in the follow-up test. Impaling is difficult in the base
-game too; no mod-specific impaling failure was established. Long sessions remain
-untested. No numerical latency or frame-rate measurements were supplied.
-
-The update loop uses one persistent game-thread timer. Earlier builds repeatedly
-queued callbacks from an async thread; the observed UE4SS `Ref was not function`
-failure stopped pose and input publishing while the game itself kept running.
-The [native timer API](https://docs.ue4ss.com/dev/lua-api/global-functions/delayedactions.html)
-also processes F5/F8/F9 intent without creating new cross-thread callbacks.
+Features include selected loadouts and clothing colours, native weapon contact,
+wounds and dismemberment, enemy weapon pickup, shared rounds, and an F5 panel
+with restart controls, measured network delay and optional host updates.
 
 ## Install
 
-1. Close all Half Sword windows before installing or upgrading the mod.
-2. Extract the ZIP, open `HalfSwordMP`, and run **Start Multiplayer.cmd** on
-   each PC. This installs the scripts and starts a game window.
-3. After installation, you may launch normally through Steam. Its hidden
-   companion starts automatically; the launcher is no longer required.
-4. To open additional windows, run **Start Multiplayer.cmd** again. Each window
-   gets separate runtime files. Keep each launcher open for the window it starts.
+Both players need **matching Half Sword Demo installations**, the same mod
+release, and **Python 3.10 or newer** available as `python`.
 
-Python 3.10 or newer must be available as `python`. The launcher finds the
-workspace game or the usual Steam installation, otherwise asks for the game
-folder. Both game executables must match. The official pinned UE4SS loader is
-checksum verified. Original EXE and PAK files are not modified.
+1. Close all Half Sword windows before installing or updating.
+2. Extract the ZIP and open its `HalfSwordMP` folder.
+3. Run **Start Multiplayer.cmd**. It finds the usual Steam location or asks for
+   your demo folder, installs the mod, and opens the game.
+4. Repeat on the other PC.
 
-The ZIP contains mod and launcher source only: no game files, saves, captured
-state, saved addresses, development scripts or per-PC paths. Connection settings
-remain local in `runtime/preferences.json`.
+After installation, you can launch normally through **Steam**. A hidden
+companion starts automatically and exits with that game window. Python must
+remain installed. The companion is cached locally, so moving the extracted
+folder does not break Steam startup.
+
+To open additional windows, run **Start Multiplayer.cmd** again. Keep each
+launcher open for the window it starts; each instance gets separate runtime files.
+
+The installer adds a checksum-verified [UE4SS loader](https://github.com/UE4SS-RE/RE-UE4SS)
+and scripts without modifying the original game EXE or PAK files. The ZIP
+contains no game assets, saves, personal addresses or captured gameplay state.
+Connection preferences stay on your PC.
 
 ## Play
 
-1. Select your fighter in the native main menu.
-2. Press **F5**, choose **Host** on one PC; its address may stay blank.
-3. On the other PC, enter the host's address and choose **Join**.
-4. Choose **Enter multiplayer match** on both PCs. The mod uses native free
-   combat and the native Duel start action with your selected loadout. It skips
-   Tutorial at runtime, restores that setting on disconnect, and does not save
-   a changed tutorial preference. No preliminary single-player fight is needed.
-5. Close the panel with F5 and use the game's normal controls.
+1. Select your fighter and loadout in the game's main menu.
+2. Open **Multiplayer / F5**. Choose **Host** on one PC; its IP field can stay blank.
+3. On the other PC, enter the host's address and matching port, then choose **Join**.
+4. Choose **Enter multiplayer match** on both PCs. Close F5 and fight.
 
-Both players have a **Restart round** button beside **Enter multiplayer match**.
-The host coordinates each shared reset and retains the selected fighter/equipment.
-The button is disabled during normal respawn; if that takes over six seconds it
-becomes available for a retry. A client request remains pending until the host
-advances the round. Both players must use protocol 19.
+| Control | Action |
+| --- | --- |
+| F5 | Open or close the multiplayer panel. |
+| Hold G | Fill the native give-up meter; release to cancel. Available while healthy or downed. |
+| E / Q | Pick up a nearby dropped weapon with a free hand. |
+| Escape | Use the native pause/settings menus. |
+| Restart round | Either player can request the next shared round from F5. |
 
-Confirmed unconsciousness, sustained native incapacity and death trigger a
-three-second restart coordinated by the host. A completed native surrender
-meter uses a 0.25-second countdown. Both PCs use the native arena reset; loading
-and restoring equipment add startup time. Native result cards and KO slow motion
-are suppressed while multiplayer owns `Arena_Cutting_Map`.
+Confirmed KO, death or sustained inability to recover triggers a shared restart.
+A recoverable fall alone should not end the round. Giving up requires filling
+the native meter. Selected gear returns after each reset; the single-player
+return-to-menu death screen stays suppressed.
 
-Hold **G** to give up using the game's native surrender action. Its give-up UI
-is preserved; surrender ends the shared round. The single-player death screen's
-return-to-menu action stays suppressed. Hold G until the native meter fills;
-release it to cancel. This is available while healthy or downed. To collect an enemy's dropped weapon, approach
-it and use E/Q with a free hand.
+The restart button waits during normal respawn and allows another attempt if
+setup stalls for over six seconds. To change your fighter, return to the main
+menu, make your selection, then enter multiplayer again.
 
-Each reset runs the native Duel card handler again with the selected fighter
-rank/team restored. KO is latched until the coordinator resets both PCs, so native
-regeneration cannot erase it between snapshots. A KO preserves native player
-control identity. Death/result widgets are hidden during construction and removed
-while multiplayer owns the arena. Native input is restored after possession and
-when closing the panel. Returning to the main menu clears the old match.
+## Connection settings
 
-For host/client testing on one PC, host on UDP **7777** and join
-**127.0.0.1**, port **7777**, in the other window. The client uses a separate
-ephemeral local socket. Only two hosts on the same PC need different listening
-ports. Sharing one port between a host and its joining client is supported.
+| Situation | Address and ports |
+| --- | --- |
+| Same home network | Join the host PC's LAN IPv4 address. Default gameplay port: **UDP 7777**. |
+| Internet play | Forward the chosen UDP port to the host PC; join its public IPv4 address. |
+| Two windows on one PC | Host on **7777**; join **127.0.0.1**, port **7777**, in the other window. |
+| Two hosts on one PC | Give each host a different listening port. |
 
-## What is synchronized
+The client uses a temporary local socket, so it can target the host's port
+without a conflict. “Address already in use” usually means another host already
+occupies that listening port.
 
-- Controls run natively on each owner's PC. Opponents follow measured poses;
-  this mode does not send an unused duplicate input stream.
-- Root position, physical body-bone poses, weapon/query-helper transforms, worn
-  equipment classes, mesh/material appearance, owner identity,
-  vitals and native injury events target 30 updates/s. Actual capture rate is
-  reported in `runtime/performance.txt`; slow game frames can reduce it.
-- Modular weapons use the demo's saved weapon construction: grip, blade, guard,
-  pommel, submodules, sizes, material groups, colors and coat of arms. The native
-  setup function builds the weapon and hand constraints. Preset weapons retain
-  their normal class setup.
-- Each owner retains native control and physics for its own fighter. The remote
-  fighter's native physics-asset bodies and native weapon meshes follow owner
-  snapshots through Unreal's Physics Control component. Its independent AI,
-  movement tick and weapon tick are stopped. Short interpolation smooths the
-  received pose. Local native combat still queries the native collision meshes.
-- Contacts react through local native physics. Native cut/stab query helpers
-  follow their owner's captured transforms and enabled state.
-- A player's native contact against the opponent produces a bounded injury
-  event. The receiving owner calls native `Get Damage` once with the damage,
-  cutting/stabbing flags, source component and a rebased hit point/query box.
-  Its independent temporary query box cannot apply physical collision forces.
-  Replayed impulse, velocity and shockwave are zero to avoid duplicate impacts.
-  Current-life IDs and event sequences reject old or repeated injury. Native
-  local contacts on the owner are invulnerable to avoid applying injury twice.
-  There is no second scalar health subtraction. Native injury processing owns
-  the resulting wounds and ongoing pain/bleeding on that instance. Confirmed
-  native sever events also prepare native vertex paint and replay the sever on
-  the owner. Detached limbs do not share one networked physics simulation.
-- Stand-in weapons are explicitly visible to both players. Invisible collision
-  helpers stay hidden. The native opponent finishes its two-second startup before
-  replicated equipment is applied. Shared two-handed actors are preserved when
-  clearing an absent off-hand slot. Dropped weapons are not repeatedly recreated
-  in combat.
-- Inactive arena opponents are excluded from weapon queries, so hidden bodies
-  cannot absorb attacks. Current stand-in weapons, including fists, remain active.
-
-Only portable cosmetic scalar/vector appearance parameters are copied onto native
-materials, preserving their own wound/blood render-target textures. The worn
-armor list is used rather than the pawn's spawn defaults. Short incomplete state
-reads are tolerated instead of repeatedly destroying and rebuilding the opponent.
-
-Network latency still delays remote poses. There is no rollback or latency compensation.
-Exact detached-limb, constraint/impalement and wound-texture matching is not
-established. Dropped weapons are visible on both peers and cross-peer pickup
-ownership is implemented. Fully shared dropped-item physics is not implemented.
-Physics interactions and Internet latency require
-further testing across hardware and network conditions; the user has confirmed
-successful Internet play with very little lag in their session. Use the same
-mod version on both PCs.
-Earlier forced-fall diagnostics showed native loss/countdown text. Subsequent
-player testing confirms the native result UI is now working.
-
-## Direct IP
-
-On one home network, join the host's LAN IPv4 address. For Internet play, forward
-**UDP 7777**, or your selected gameplay port, to the host PC and join its public
-IPv4 address. The mod does not change router or firewall settings. CGNAT can
-prevent ordinary forwarding. Direct-IP play has no password; the first peer
-occupies the guest slot. Session nonces and sequence numbers reject stale state.
+The mod does not configure your router or firewall. CGNAT can prevent ordinary
+port forwarding. Sessions have no password; the first joining peer takes the guest slot.
 
 ## Optional updates
 
-**Check for update**, **Apply update & restart**, and optional **Automatic updates
-from the host** use the chosen host's companion. There is no public update service.
-The host serves updates over **TCP 7778**, or gameplay port plus one. That TCP port
-also needs forwarding if Internet updates are wanted.
+The host shares its mod package; there is no public update server.
 
-Downloads are staged. Applying waits until the game exits, replaces source files,
-reinstalls the mod and restarts the game. Automatic updates check once per minute
-and apply a staged package after exit. Manual ZIP installation also works.
+- **Check for update** downloads and stages the host's package.
+- **Apply update & restart** requests installation after the game closes.
+- **Automatic updates from the host** checks once per minute and applies a
+  staged package after exit.
 
-## Development summary
+Updates wait for all windows using that installed game executable to close.
+For Internet updates, also forward **TCP 7778**, or your gameplay port plus one.
+Manual ZIP installation works too. Keep both PCs on the same release.
 
-The project began as an attempt to let a guest control an existing opponent on
-the host. Connection tests worked before the experience did: the guest could
-have the wrong camera, poor control, missing equipment or a visible opponent
-that lacked usable combat collision.
+## Status and troubleshooting
 
-The design moved toward a native player on each PC and a native opponent for
-the remote person. Received body and weapon poses drive that opponent's native
-collision components. Native injury events are sent to the victim's owner, and
-the host coordinates shared round boundaries. This is mixed authority rather
-than one PC simulating the entire fight.
+Two-PC Internet playtests confirmed usable combat, wounds, grabbing,
+dismemberment and enemy weapon pickup, with little perceived lag in those
+sessions. Exact wound and sever visuals have not been proved identical.
 
-| Problem encountered | Resulting change |
+The latest code passed **164 automated checks**. Two visible games started from
+one extracted launcher kept opponent weapon meshes visible through three rounds;
+each window also completed ten actual F5 key presses without crashing.
+
+Intermittent clothing/weapon disappearance and historical crashes are not all
+conclusively resolved. Long sessions still need testing. Detached limbs, ground
+objects and impalement constraints do not share one identical physics simulation.
+Pose delivery targets 30 Hz; network delay and slow game frames still affect play.
+
+If joining fails, check the release, port and arena on both PCs, and ensure both
+players chose **Enter multiplayer match**. If the companion is offline, close
+the game and rerun **Start Multiplayer.cmd** to repair installation. For low
+combat FPS, lower graphics settings; **RTT** measures network round-trip time,
+which is separate from rendering performance.
+
+Logs: `HalfSwordUE5/Binaries/Win64/ue4ss/UE4SS.log`. Launcher connection and
+performance records: local `runtime/instances/` folders. To disable the mod,
+close the game and set `HalfSwordMP : 0` in
+`HalfSwordUE5/Binaries/Win64/ue4ss/Mods/mods.txt`.
+
+## Development process
+
+The first prototype let a guest control a host-side enemy. Camera, ownership
+and latency problems led to the current approach: each person controls their
+own fighter, and received poses drive a native opponent. Visual snapshots alone
+could not provide combat, so native collision, equipment construction, injury
+processing and severing were integrated next.
+
+Development alternated between player reports, runtime inspection, automated
+regression checks, visible local games and Internet playtests. Repeated rounds
+exposed problems that a successful first fight missed. Later tests distinguished
+real keyboard input from programmatic menu toggles, and separate game copies
+from two launches of the same installation.
+
+Below are the main issues and their fixes. Remaining uncertainty is marked
+where a change has not proved every reported case resolved.
+
+### Setup and match flow
+
+| Issue encountered | Fix or current status |
 | --- | --- |
-| Installer failed on older Python versions | Chunked SHA-256 hashing replaced reliance on `hashlib.file_digest`. |
-| Room-code friction and duplicate hosts | Direct-IP joining, local preferences, launcher locking and occupied-port reporting. |
-| Wrong cameras, fighters or missing weapons | Local native player ownership and reconstruction of the other player's selected native equipment. |
-| Position disagreement, launches and phantom impacts | Common arena coordinates, pose-driven native stand-ins and injury replay without duplicate forces. |
-| Mouse/keyboard freezing after resets | One persistent game-thread timer, retiring latent UI callbacks and restoring input after possession. |
-| Single-player cards and menu exits interrupting matches | Multiplayer entry through the native Duel/start handler and host-coordinated shared resets. |
-| Healthy falls restarting, or incapacitated players remaining in a round | Sustained KO/incapacity confirmation and remembering critical leg damage during a fall. |
-| Wounds and severing missing on the owning player | Native damage replay and asynchronous native vertex-paint preparation before severing. |
-| Clothes rebuilding or changing colour | Preserving garments through weapon changes and applying all three saved dye groups. |
-| Clothes disappearing after movement or damage | Worn garments share native body bounds; further intermittent cases remain under investigation. |
-| Contact-related hitches | Budgeted injury queues, reduced duplicate effects and less repeated file/discovery work. |
-| A sever-hook host crash | Removing an unsafe by-reference UObject-array read and checking component lifetimes before delayed native calls. |
+| Installer crashed on `hashlib.file_digest`. | Replaced it with chunked SHA-256 hashing for older supported Python versions. |
+| Equipment choices differed from a Steam launch. | Preserved native selection/startup and tested compatible builds; the original cause was not conclusively isolated. |
+| Room codes and private settings complicated sharing. | Switched to direct IP; excluded preferences and generated paths from the ZIP. |
+| Hosting with a blank IP failed. | Made the destination address join-only and reported occupied host ports explicitly. |
+| The guest had the wrong camera or limited movement. | Kept each PC in control of its own native player. |
+| Joining needed an existing enemy or showed a dummy. | Added native opponent creation and quarantined inactive arena actors. |
+| Duel/Carnage cards interrupted match entry. | Used explicit F5 entry through native start/Duel handlers, preserving the selected fighter. |
+| The client entered an empty arena after a reset. | Added current-life checks, waiting for both fighters and respawn retries; intermittent cases still need playtesting. |
+| Death returned the client to single-player menus. | Suppressed result cards/exit timelines during multiplayer and coordinated shared resets. |
+| Character selection automatically pulled players back into a match. | Cleared the old match and required explicit re-entry after selection. |
+| Clients could not restart, or stalled resets blocked recovery. | Added acknowledged client requests, retained life IDs and a six-second retry path. |
+| Additional windows were blocked; Steam needed an open launcher. | Added per-instance runtimes and automatic companion startup for Steam. |
+| Two launches of one package could disrupt startup. | Removed the temporary shared path; unchanged scripts stay untouched and replacements are atomic. |
+| Updates had awkward timing or failed from the Steam cache. | Staged installation until all game windows close and removed same-file cache copying. |
 
-Player feedback and two-PC testing exposed failures that a successful connection
-or an automated test could not establish. Local scripted checks also needed
-correction: a swing with no registered native contact did not prove combat, and
-a sever flag did not prove a visible cut. Later validation used repeatable
-native injury workloads, actual garment bounds and foreground game-window
-inspection. The final additional camera-angle check was interrupted and is not
-recorded as a pass.
+### Combat, equipment and appearance
 
-Full development notes and a player-facing mod write-up are available in the
-separate documentation bundle. The latest changes improve identified causes;
-they do not establish perfect physics synchronization, complete clothing-bug
-coverage or a guaranteed client frame rate.
+| Issue encountered | Fix or current status |
+| --- | --- |
+| Opponents appeared in different positions. | Used common arena coordinates and measured poses instead of independent remote movement. |
+| Visual proxies lacked cuts, stabs or weapon contact. | Used native fighters, collision bodies and weapon/query components. |
+| Launches, phantom impacts and excessive knockback. | Removed competing remote simulation, extra capsule blocking and duplicate replay forces. Native knockback remains unchanged. |
+| Fast swings separated weapons from hands. | Interpolated held weapons relative to measured hands and stopped competing remote weapon ticks. |
+| Opponent weapons or modular parts were missing. | Captured native construction, mapped components and restored render flags. Later intermittent disappearance remains unconfirmed. |
+| Dropped weapons disappeared from the other player's view. | Tracked released native actors and sent mesh poses; refreshed replaced component lists. Intermittent cases remain open. |
+| Enemy drops could be seen but not used. | Added validated ownership transfer and native hand setup for pickup. |
+| Injuries appeared only on the opponent representation. | Relayed deduplicated native injury events to the victim's owning PC. |
+| Self-dismemberment did not appear. | Prepared native vertex paint and replayed confirmed sever events on the owner; playtesters confirmed usable results. |
+| Dropping a weapon rebuilt worn clothing. | Separated weapon changes from armour changes, preserving garments and wounds. |
+| Clothing vanished when downed or viewed at certain angles. | Applied native parent bounds and filtered camera hide parameters. Some intermittent cases remain unresolved. |
+| Outfits, dyes, shield patterns or sidearms changed between rounds. | Saved all weapon slots, actual cosmetic values and material bases; restored them after native setup. |
+| Respawns sometimes started naked. | Waited for configured armour and retried incomplete setup before marking fighters ready. |
+| Blood effects were duplicated. | Kept native combat blood rendering and removed the extra replicated particle stream. |
 
-## Diagnostics and development
+### Controls, performance and stability
 
-F8 writes discovery; F9 toggles a visual pose preview. Leave preview off in play.
-Logs are in the game's `HalfSwordUE5/Binaries/Win64/ue4ss/UE4SS.log`. Local
-`runtime/status.json`, `session-check.txt`, pose/input/damage records and performance
-files help diagnose the bridge. Development helpers and runtime files are excluded
-from the player ZIP. Legacy loopback helpers target retired architectures.
+| Issue encountered | Fix or current status |
+| --- | --- |
+| Recoverable knockdowns ended rounds. | Distinguished native KO from a brief fall and required sustained incapacity confirmation. |
+| Badly injured fighters stayed down without ending the round. | Remembered critical damage during recovery checks so regeneration could not cancel confirmed incapacity. |
+| Resets froze mouse or keyboard input. | Used one persistent game-thread timer, retired latent UI callbacks and restored input after possession without flushing held keys. |
+| The game stayed paused or in slow motion. | Restored active-match pause/time-dilation state while respecting open menus. |
+| Escape stacked menus or trapped focus over settings. | Retired duplicate pause layers and restored native settings focus. Settings have automated coverage; complete visual testing remains limited. |
+| Giving up was instant or changed orientation. | Used the native hold-G meter and preserved player identity. |
+| Downed players could not open the give-up meter. | Added bounded input retries and a fallback opening the game's own meter. |
+| Hurt hints vanished or the give-up meter doubled. | Kept one current-life HUD/meter; disabled widget ticking no longer incorrectly indicates retirement. |
+| Opponent motion looked low-rate or heavily interpolated. | Raised the target to 30 Hz, reused samples and reduced redundant input/appearance work. |
+| Combat contact caused stutters. | Budgeted/deduplicated injury replay, throttled discovery and reduced file/material work. Playtesters reported improvement; hardware still matters. |
+| Heartbeat, hissing or weapon-slide audio persisted. | Stopped looping cues on driven/hidden actors while retaining finite impact and pain sounds. |
+| The opponent's shadow trailed behind. | Enabled shadow-cache invalidation on driven meshes; the final visual result remains unconfirmed. |
+| Severing or native-array access caused crashes. | Removed an unsafe by-reference read, checked delayed component lifetimes and replaced TArray callbacks with bounded indexed reads. |
+| F5 crashed despite programmatic menu tests passing. | Moved key registration to startup and kept menu work on the game thread. Actual key tests passed; not every historical crash is explained. |
 
-Run `python -m unittest discover -s tests -v` and `python tools/package.py` from the
-project folder. Optional Lua tests use Lupa in `runtime/lua-check`. Native combat
-validation needs rendered game instances; headless transport checks do not prove
-that the demo's injury/vertex-paint pipeline works.
-
-To disable, close the game and set `HalfSwordMP : 0` in its UE4SS `Mods/mods.txt`.
-
-Dependencies: [UE4SS](https://github.com/UE4SS-RE/RE-UE4SS),
-[pinned official loader](https://github.com/UE4SS-RE/RE-UE4SS/releases/download/experimental/UE4SS_v3.0.1-1181-g83330635.zip).
-Each player supplies their own matching demo installation.
+The central lesson was to reuse native systems while explicitly managing
+ownership, object lifetimes and round transitions. Showing a remote avatar was
+only the start; repeated gameplay and player feedback exposed the difficult bugs.
