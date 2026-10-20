@@ -1,6 +1,6 @@
 # HalfSwordMP
 
-**Experimental multiplayer for Half Sword Demo · 2 players · Version 0.10.16 · Protocol 19**
+**Experimental multiplayer for Half Sword Demo · 2 players · Version 0.10.17 · Protocol 20**
 
 ## About the mod
 
@@ -16,7 +16,7 @@ player's PC. The host coordinates round resets. UE4SS runs the Lua mod inside
 the game, and a Python companion handles networking and updates.
 
 Features include selected loadouts and clothing colours, native weapon contact,
-wounds and dismemberment, enemy weapon pickup, shared rounds, and an F5 panel
+wounds and dismemberment, enemy weapon pickup, shared character voice sounds, and an F5 panel
 with restart controls, measured network delay and optional host updates.
 
 ## Install
@@ -102,15 +102,18 @@ Two-PC Internet playtests confirmed usable combat, wounds, grabbing,
 dismemberment and enemy weapon pickup, with little perceived lag in those
 sessions. Exact wound and sever visuals have not been proved identical.
 
-The latest code passed **168 automated checks**. Visible paired tests exercised
-native death transitions and heavy head injuries in both directions; each case
-ended the shared round and returned two healthy fighters. The preceding
-same-launcher checks covered weapon visibility and actual F5 input.
+The latest code passed **176 automated checks**. Visible paired tests applied
+native arm cuts to both owners, completed injured hold-G actions, recovered a
+deliberately stalled meter, and returned healthy fighters after shared resets.
+Repeated E transitions kept both fighters visible. Native pain and breathing
+playback, volume changes and stopping were checked in both directions.
 
 Intermittent clothing/weapon disappearance and historical crashes are not all
 conclusively resolved. Long sessions still need testing. Detached limbs, ground
 objects and impalement constraints do not share one identical physics simulation.
 Pose delivery targets 30 Hz; network delay and slow game frames still affect play.
+Brief native hand/weapon offsets can remain during extreme swings. Voice cues
+use each game's native audio, so randomized samples need not be identical.
 
 If joining fails, check the release, port and arena on both PCs, and ensure both
 players chose **Enter multiplayer match**. If the companion is offline, close
@@ -166,12 +169,14 @@ where a change has not proved every reported case resolved.
 | Opponents appeared in different positions. | Used common arena coordinates and measured poses instead of independent remote movement. |
 | Visual proxies lacked cuts, stabs or weapon contact. | Used native fighters, collision bodies and weapon/query components. |
 | Launches, phantom impacts and excessive knockback. | Removed competing remote simulation, extra capsule blocking and duplicate replay forces. Native knockback remains unchanged. |
-| Fast swings separated weapons from hands. | Interpolated held weapons relative to measured hands and stopped competing remote weapon ticks. |
+| Fast swings separated weapons from hands. | Interpolated relative to measured hands, stopped competing ticks, gave held meshes precedence over stowed duplicates, and refreshed equipment mappings together. Brief native physics offsets remain possible. |
+| E weapon transitions made a fighter vanish or desync. | Refreshed collision geometry immediately when inventory changed and invalidated cached component mappings with the appearance inventory. Repeated local transitions passed; arbitrary transitions still need playtesting. |
+| Old cleanup references could affect recycled native objects. | Check cached actor/component identities before hiding or restoring them. Three paired reset cycles with weapon changes and forced garbage collection passed. |
 | Opponent weapons or modular parts were missing. | Captured native construction, mapped components and restored render flags. Later intermittent disappearance remains unconfirmed. |
 | Dropped weapons disappeared from the other player's view. | Tracked released native actors and sent mesh poses; refreshed replaced component lists. Intermittent cases remain open. |
 | Enemy drops could be seen but not used. | Added validated ownership transfer and native hand setup for pickup. |
 | Injuries appeared only on the opponent representation. | Relayed deduplicated native injury events to the victim's owning PC. |
-| Self-dismemberment did not appear. | Prepared native vertex paint and replayed confirmed sever events on the owner; playtesters confirmed usable results. |
+| Self-dismemberment did not appear and severed fighters looked choppy. | Corrected a native paint TMap mistakenly read as an array. Owner-side cuts now complete; replay errors no longer repeatedly destroy the remote avatar. Paired arm-cut tests and a player retest passed. |
 | Dropping a weapon rebuilt worn clothing. | Separated weapon changes from armour changes, preserving garments and wounds. |
 | Clothing vanished when downed or viewed at certain angles. | Applied native parent bounds and filtered camera hide parameters. Some intermittent cases remain unresolved. |
 | Outfits, dyes, shield patterns or sidearms changed between rounds. | Saved all weapon slots, actual cosmetic values and material bases; restored them after native setup. |
@@ -189,11 +194,12 @@ where a change has not proved every reported case resolved.
 | The game stayed paused or in slow motion. | Restored active-match pause/time-dilation state while respecting open menus. |
 | Escape stacked menus or trapped focus over settings. | Retired duplicate pause layers and restored native settings focus. Settings have automated coverage; complete visual testing remains limited. |
 | Giving up was instant or changed orientation. | Used the native hold-G meter and preserved player identity. |
-| Downed players could not open the give-up meter. | Added bounded input retries and a fallback opening the game's own meter. |
+| Downed players could not open or finish the give-up meter. | Added bounded input retries and native-widget fallback. If an existing meter stalls, the same bar completes at the native two-second rate; releasing G cancels it. |
 | Hurt hints vanished or the give-up meter doubled. | Kept one current-life HUD/meter; disabled widget ticking no longer incorrectly indicates retirement. |
 | Opponent motion looked low-rate or heavily interpolated. | Raised the target to 30 Hz, reused samples and reduced redundant input/appearance work. |
 | Combat contact caused stutters. | Budgeted/deduplicated injury replay, throttled discovery and reduced file/material work. Playtesters reported improvement; hardware still matters. |
-| Heartbeat, hissing or weapon-slide audio persisted. | Stopped looping cues on driven/hidden actors while retaining finite impact and pain sounds. |
+| Heartbeat, hissing or weapon-slide audio persisted. | Stopped unmanaged loops on driven/hidden actors; replicated exterior voice loops follow the owner's volume and stop state. |
+| A fighter made voice sounds that the other player could not hear. | Replicated native pain, breathing and throat audio state with playback revisions; stop stale playback and exclude private heartbeat/music audio. Both directions passed native checks. |
 | The opponent's shadow trailed behind. | Enabled shadow-cache invalidation on driven meshes; the final visual result remains unconfirmed. |
 | Severing or native-array access caused crashes. | Removed an unsafe by-reference read, checked delayed component lifetimes and replaced TArray callbacks with bounded indexed reads. |
 | F5 crashed despite programmatic menu tests passing. | Moved key registration to startup and kept menu work on the game thread. Actual key tests passed; not every historical crash is explained. |

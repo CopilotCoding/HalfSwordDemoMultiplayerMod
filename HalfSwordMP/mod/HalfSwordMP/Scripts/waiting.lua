@@ -6,6 +6,14 @@ local spawned
 local native_equipment={}
 local last_scan=-1
 local function valid(o) return o~=nil and o:IsValid() end
+local function live(s)
+    -- UE4SS can retain a valid wrapper after native memory is reused. A new
+    -- UObject at that address is not the actor whose state this lease saved.
+    return valid(s.actor)and s.actor:GetFullName()==s.identity
+end
+local function live_part(p)
+    return valid(p.component)and p.component:GetFullName()==p.identity
+end
 local function equipment(a)
     if not valid(a) then return false end
     local c=a:GetClass()
@@ -17,8 +25,9 @@ local function equipment(a)
     return false
 end
 local function environment_only(s)
+    if not live(s)then return end
     for _,p in ipairs(s.primitives) do
-        if valid(p.component) then
+        if live_part(p) then
             p.component:SetCollisionResponseToAllChannels(0)
             p.component:SetCollisionResponseToChannel(0,2) -- WorldStatic: preserve floor contact.
             -- Native weapons also use object traces. A hidden arena opponent
@@ -29,20 +38,21 @@ local function environment_only(s)
     s.actor:SetActorEnableCollision(true)
 end
 local function restore_responses(s)
+    if not live(s)then return end
     for _,p in ipairs(s.primitives) do
-        if valid(p.component) then
+        if live_part(p) then
             for channel,value in pairs(p.responses) do p.component:SetCollisionResponseToChannel(channel,value) end
             p.component:SetCollisionEnabled(p.mode)
         end
     end
 end
 local function hide(s)
-    if not valid(s.actor) then return end
+    if not live(s) then return end
     Audio.quiet(s.actor,true)
     if not s.actor.bHidden then s.actor:SetActorHiddenInGame(true) end
     for _,p in ipairs(s.primitives) do
         local c=p.component
-        if valid(c) then
+        if live_part(p) then
             if c:IsVisible() then c:SetVisibility(false,false) end
             if not c.bHiddenInGame then c:SetHiddenInGame(true,false) end
         end
@@ -64,7 +74,7 @@ local function hold(a)
         if s.fighter then a.Invulnerable=true;a["Give Up"]=false end
         return
     end
-    local s={actor=a,tick=a:IsActorTickEnabled(),collision=a:GetActorEnableCollision(),hidden=a.bHidden,primitives={}}
+    local s={actor=a,identity=key,tick=a:IsActorTickEnabled(),collision=a:GetActorEnableCollision(),hidden=a.bHidden,primitives={}}
     saved[key]=s
     if a:GetClass():GetFName():ToString()=="Willie_BP_C" then
         s.fighter=true;s.invulnerable=a.Invulnerable;s.give_up=a["Give Up"]
@@ -75,7 +85,7 @@ local function hold(a)
         local c=r:get()
         if valid(c) then
             local responses={};for channel=0,31 do responses[channel]=c:GetCollisionResponseToChannel(channel) end
-            s.primitives[#s.primitives+1]={component=c,responses=responses,mode=c:GetCollisionEnabled(),visible=c:IsVisible(),hidden=c.bHiddenInGame}
+            s.primitives[#s.primitives+1]={component=c,identity=c:GetFullName(),responses=responses,mode=c:GetCollisionEnabled(),visible=c:IsVisible(),hidden=c.bHiddenInGame}
         end
     end
     if a:IsA("/Script/Engine.Character") and valid(a.CharacterMovement) then
@@ -145,7 +155,7 @@ function Waiting.equipment(pawn,actors)
         if s then
             s.active=true;s.dynamic=true;restore_responses(s)
             a:SetActorHiddenInGame(s.hidden)
-            for _,p in ipairs(s.primitives) do if valid(p.component) then
+            for _,p in ipairs(s.primitives) do if live_part(p) then
                 p.component:SetVisibility(p.visible,false);p.component:SetHiddenInGame(p.hidden,false)
             end end
         end
@@ -208,7 +218,7 @@ function Waiting.drive(a)
     a.Invulnerable=s.invulnerable==true
     a:SetActorHiddenInGame(false);a:SetActorEnableCollision(true);a:SetActorTickEnabled(true)
     for _,p in ipairs(s.primitives) do
-        if valid(p.component) then p.component:SetVisibility(p.visible,false);p.component:SetHiddenInGame(p.hidden,false) end
+        if live_part(p) then p.component:SetVisibility(p.visible,false);p.component:SetHiddenInGame(p.hidden,false) end
     end
     return true
 end
@@ -225,10 +235,10 @@ function Waiting.release()
     Audio.release()
     last_scan=-1
     for _,s in pairs(saved) do
-        if valid(s.actor) then
+        if live(s) then
             restore_responses(s)
             for _,p in ipairs(s.primitives) do
-                if valid(p.component) then
+                if live_part(p) then
                     p.component:SetVisibility(p.visible,false);p.component:SetHiddenInGame(p.hidden,false)
                 end
             end
@@ -251,10 +261,10 @@ end
 function Waiting.count() local n=0;for _ in pairs(saved) do n=n+1 end;return n end
 function Waiting.inspect(file)
     for key,s in pairs(saved) do
-        if valid(s.actor) then
+        if live(s) then
             local visible=0
             for _,p in ipairs(s.primitives) do
-                if valid(p.component) and p.component:IsVisible() and not p.component.bHiddenInGame then visible=visible+1 end
+                if live_part(p) and p.component:IsVisible() and not p.component.bHiddenInGame then visible=visible+1 end
             end
             file:write("waiting_actor=",key,"|tick=",tostring(s.actor:IsActorTickEnabled()),"|hidden=",tostring(s.actor.bHidden),"|visible_primitives=",visible,"\n")
         end

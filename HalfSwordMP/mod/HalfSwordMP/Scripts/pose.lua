@@ -23,6 +23,9 @@ local remote_equipment,remote_rows,remote_colliders
 local remote_drops,remote_pickups={},{}
 local Dropped=dofile(require('paths').scripts..'/dropped_weapons.lua')
 local native_visible=false
+local Voice=dofile(require('paths').scripts..'/voice.lua')
+local remote_voice,voice_updated={},-100
+function Pose.voice()return remote_voice,voice_updated end
 local appearance_signature
 local cosmetic_signature
 local appearance_version=0
@@ -70,6 +73,7 @@ function Pose.destroy()
     remote_frame=nil
     remote_equipment,remote_rows,remote_colliders=nil,nil,nil;native_visible=false
     remote_drops,remote_pickups={},{}
+    remote_voice,voice_updated={},-100
     appearance_signature=nil
     cosmetic_signature=nil
 end
@@ -410,6 +414,7 @@ local function update(runtime, pawn, local_text, remote_text)
         end
     end
     remote_equipment,remote_rows=Equipment.read(rows),rows
+    remote_voice,voice_updated=Voice.read(rows),clock
     Held.prepare(frame,remote_equipment)
     remote_drops,remote_pickups=Dropped.read(rows)
     -- Native weapon Blueprints provide the collision shapes for this protocol.

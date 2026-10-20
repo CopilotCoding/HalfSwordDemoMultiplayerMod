@@ -236,7 +236,27 @@ function Round.guard_pawn(pawn)
                     for _,w in ipairs(candidates)do if chosen:GetFullName()~=w:GetFullName()then retire_surrender(w)end end
                 end
                 s.g_held=true
-                if valid(s.meter)then pawn['Give Up']=true;Round.keep_surrender_meter(s.meter)
+                if valid(s.meter)then
+                    pawn['Give Up']=true
+                    local name=s.meter:GetFullName();local progress=s.meter['Hold Meter']
+                    if s.progress_meter~=name then
+                        s.progress_meter=name;s.progress_value=progress;s.progress_at=clock;s.hold_fallback=nil
+                    elseif progress>s.progress_value+.0001 then
+                        s.progress_value=progress;s.progress_at=clock
+                    end
+                    -- An injured pawn can leave a valid native widget with a
+                    -- stopped graph. Keep its single native bar and two-second
+                    -- hold, rather than treating its existence as success forever.
+                    if not s.hold_fallback and clock-s.progress_at>=.75 then
+                        s.hold_fallback={clock=clock,progress=math.max(0,math.min(1,progress))}
+                        s.meter.TickFrequency=1
+                    end
+                    if s.hold_fallback then
+                        progress=math.min(1,s.hold_fallback.progress+(clock-s.hold_fallback.clock)/2)
+                        s.meter['Hold Meter']=progress
+                        if valid(s.meter.ProgressBar_0)then s.meter.ProgressBar_0:SetPercent(progress)end
+                    end
+                    Round.keep_surrender_meter(s.meter)
                 elseif clock-s.g_hold_since>=1.6 and(s.g_attempts or 0)>=2
                     and clock>=(s.g_fallback or 0)then
                     s.g_fallback=clock+3
@@ -256,6 +276,7 @@ function Round.guard_pawn(pawn)
                 if valid(s.meter)then retire_surrender(s.meter)end
                 s.meter=nil;s.g_hold_since=nil;s.g_retry=nil;s.meter_scan=nil
                 s.g_attempts=nil;s.g_fallback=nil
+                s.progress_meter=nil;s.progress_value=nil;s.progress_at=nil;s.hold_fallback=nil
             end
             s.g_held=held
         end

@@ -15,18 +15,21 @@ function Audio.quiet(actor,hidden)
    local name=c:GetFullName();local sound=c.Sound
    local loop=valid(sound)and type(sound.Duration)=='number'and sound.Duration>=10000
    local old=muted[name]
-   if hidden or loop then
+   local managed=(_G.HSMPVoiceManaged or{})[name]
+   if hidden or(loop and not managed)then
     if not old then old={component=c,volume=c.VolumeMultiplier};muted[name]=old end
     if c.VolumeMultiplier~=0 then c:SetVolumeMultiplier(0)end
     if c:IsPlaying()then c:Stop()end
    elseif old then
-    c:SetVolumeMultiplier(old.volume);muted[name]=nil
+    if not managed then c:SetVolumeMultiplier(old.volume)end;muted[name]=nil
    end
   end
  end
 end
 function Audio.release()
- for _,s in pairs(muted)do if valid(s.component)then s.component:SetVolumeMultiplier(s.volume)end end
+ for name,s in pairs(muted)do
+  if valid(s.component)and s.component:GetFullName()==name then s.component:SetVolumeMultiplier(s.volume)end
+ end
  muted={};scans={}
 end
 return Audio

@@ -77,5 +77,6 @@ def package_files(data: bytes) -> dict[str,bytes]:
     required.add('mod/HalfSwordMP/Scripts/pause.lua')
     required.update({'mod/HalfSwordMP/Scripts/held_pose.lua','mod/HalfSwordMP/Scripts/input_recovery.lua'})
     required.add('mod/HalfSwordMP/Scripts/audio_guard.lua')
+    required.add('mod/HalfSwordMP/Scripts/voice.lua')
     if not required<=result.keys():raise ValueError("Incomplete update package")
     return result

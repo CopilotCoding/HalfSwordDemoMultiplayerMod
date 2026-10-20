@@ -10,6 +10,7 @@ local Cosmetics=dofile(require('paths').scripts..'/cosmetics.lua')
 local Injury=dofile(require('paths').scripts..'/injury.lua')
 local Movement=dofile(require('paths').scripts..'/movement.lua')
 local Dropped=dofile(require('paths').scripts..'/dropped_weapons.lua')
+local Voice=dofile(require('paths').scripts..'/voice.lua')
 _G.HSMPDropped=Dropped
 local previous_motion
 local physical_bones,physical_mesh
@@ -210,9 +211,6 @@ function Avatar.capture(pawn, serial,native)
         else for i=1,#array do add(array[i],kind)end end
     end
     owner(pawn)
-    for _,field in ipairs({'Weapon Slot R 1','Weapon Slot R 2','Weapon Slot L 1','Weapon Slot L 2','Weapon Slot Back'})do
-        local o=pawn[field];if valid(o)then owner(o,'T')end
-    end
     -- Physics-constrained held items may not appear in GetAttachedActors.
     for _, property in ipairs({"Grab Component R","Grab Component L","Weapon R","Weapon L"}) do
         pcall(function()
@@ -221,6 +219,12 @@ function Avatar.capture(pawn, serial,native)
                 if o:IsA("/Script/Engine.Actor") then owner(o) else add(o) end
             end
         end)
+    end
+    -- A native inventory slot can still reference an unsheathed weapon. Held
+    -- meshes take precedence, or the peer shows an extra stowed visual whose
+    -- world-space interpolation separates it from the swinging hand.
+    for _,field in ipairs({'Weapon Slot R 1','Weapon Slot R 2','Weapon Slot L 1','Weapon Slot L 2','Weapon Slot Back'})do
+        local o=pawn[field];if valid(o)then owner(o,'T')end
     end
     local attached = {}
     pawn:GetAttachedActors(attached,true,true)
@@ -272,8 +276,9 @@ function Avatar.capture(pawn, serial,native)
     -- Both native fighters already render blood from the relayed native injury.
     -- Sending their Niagara streams back duplicates those effects and CPU work.
     if not native then Effects.capture(pawn,lines,packed)end
-    Geometry.capture(pawn,lines,packed,native)
-    Equipment.capture(pawn,lines,Geometry,Avatar.part_id)
+    Geometry.capture(pawn,lines,packed,native,dropped.signature)
+    Equipment.capture(pawn,lines,Geometry,Avatar.part_id,inventory_cache)
+    Voice.install();Voice.capture(pawn,lines)
     lines[#lines+1] = "E|"..serial.."|"..#lines
     local text = table.concat(lines,"\n").."\n"
     return #text <= 262144 and text or nil

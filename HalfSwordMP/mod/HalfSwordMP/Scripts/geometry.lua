@@ -17,12 +17,12 @@ local function equipment(a)
     end
     return false
 end
-function Geometry.capture(pawn,lines,packed,native)
+function Geometry.capture(pawn,lines,packed,native,held_signature)
     local now,key=os.time(),path(pawn)
-    if not cache or cache.pawn~=key or cache.time~=now then
+    if not cache or cache.pawn~=key or cache.time~=now or cache.held_signature~=held_signature then
         local old=cache and cache.pawn==key and cache.ids or {}
         serial=cache and cache.pawn==key and serial or 0
-        cache={pawn=key,time=now,entries={},ids={}}
+        cache={pawn=key,time=now,held_signature=held_signature,entries={},ids={}}
         local seen={}
         local function add(a)
             if not equipment(a) or seen[path(a)] then return end

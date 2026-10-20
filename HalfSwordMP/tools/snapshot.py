@@ -69,8 +69,18 @@ def validate_pose(pose):
     if pose is None:
         return True
     required={"map", "mesh", "root", "bones", "parts", "materials", "hidden", "vitals", "parameters", "effects"}
-    if not isinstance(pose, dict) or set(pose)-{"colliders","equipment","velocity","drops","pickups"}!=required:
+    if not isinstance(pose, dict) or set(pose)-{"colliders","equipment","velocity","drops","pickups","sounds"}!=required:
         return False
+    sounds=pose.get('sounds',[])
+    if not isinstance(sounds,list)or len(sounds)>3:return False
+    channels=set()
+    for sound in sounds:
+        if (not isinstance(sound,list)or len(sound)!=7 or sound[0]not in('voice','throat','exertion')
+                or sound[0]in channels or not name(sound[1])or not re.fullmatch(r'/Game/Sounds/Voice/[A-Za-z0-9_/-]+\.[A-Za-z0-9_-]+',sound[1])
+                or '..'in sound[1]or type(sound[2])is not int or not 1<=sound[2]<=10_000_000
+                or type(sound[3])is not int or sound[3]not in(0,1)
+                or not finite(sound[4:],3,3600)or not 0<=sound[4]<=2 or not .25<=sound[5]<=4 or not 0<=sound[6]<=3600):return False
+        channels.add(sound[0])
     from dropped import validate_items,validate_requests
     if not validate_items(pose.get('drops',[]))or not validate_requests(pose.get('pickups',[])):return False
     if "velocity"in pose and not finite(pose["velocity"],3,5000):return False
@@ -145,6 +155,7 @@ def pose_text(pose, counter):
     lines = ["|".join(["HSMP2", str(counter), pose["map"], pose["mesh"],
                        *(str(n) for n in pose["root"])])]
     if "velocity"in pose:lines.append("|".join(["S",*(str(n)for n in pose["velocity"])]))
+    for sound in pose.get('sounds',[]):lines.append('|'.join(['AU',*(str(n)for n in sound)]))
     def mesh_lines(identifier, mesh):
         for b in mesh["bones"]:
             lines.append("|".join(["B", identifier, *(str(n) for n in b)]))
@@ -200,7 +211,9 @@ def read_pose(path: Path):
         drops={}
         for line in lines[1:-1]:
             f = line.split("|")
-            if f[0]=='DW'and len(f)==14 and f[1]not in drops:
+            if f[0]=='AU'and len(f)==8:
+                pose.setdefault('sounds',[]).append([f[1],f[2],int(f[3]),int(f[4]),*(float(n)for n in f[5:])])
+            elif f[0]=='DW'and len(f)==14 and f[1]not in drops:
                 item={'id':f[1],'class':f[2],'transform':[float(n)for n in f[3:13]],'grant':int(f[13])}
                 drops[f[1]]=item;pose.setdefault('drops',[]).append(item)
             elif f[0]=='DR'and len(f)==4:

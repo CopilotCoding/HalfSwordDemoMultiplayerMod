@@ -81,7 +81,7 @@ function S.replay(row,own,owner,resolve,make_box)
  pending[#pending+1]={own=own,part=part,marker=marker,overlaps=overlaps,boxes=boxes,source=source}
  return true
 end
-function S.update(own)
+local function update(own)
  local e=pending[1];if not e then return 0,0 end
  if not valid(e.own)or e.own:GetFullName()~=own:GetFullName()then table.remove(pending,1);return 0,0 end
  if not valid(e.marker)or not valid(e.source)or not valid(e.boxes[1])or not valid(e.boxes[2])then
@@ -100,8 +100,12 @@ function S.update(own)
   if not ok then table.remove(pending,1);print('[HalfSwordMP] Sever preparation: '..tostring(err)..'\n');return 0,1 end
   return 0,0
  end
- local ready=false;local painted=own['Currently VP Painted Dismembered Mesh']
- for i=1,#painted do if painted[i].AmountOfVerticesAtLOD>0 then ready=true;break end end
+ -- This Blueprint property is a TMap keyed by LOD, not a TArray. Numeric
+ -- indexing returns nil even when native paint has completed.
+ local ready=false
+ own['Currently VP Painted Dismembered Mesh']:ForEach(function(_,value)
+  if value:get().AmountOfVerticesAtLOD>0 then ready=true end
+ end)
  if ready then
   local ok,err=pcall(own['Dismember Function Delayed'],own,own.Mesh,e.part,e.marker,e.overlaps,e.boxes[1],e.boxes[2],e.source,{})
   table.remove(pending,1)
@@ -110,5 +114,15 @@ function S.update(own)
  end
  if os.clock()-e.started>3 then table.remove(pending,1);print('[HalfSwordMP] Native sever paint preparation timed out\n');return 0,1 end
  return 0,0
+end
+function S.update(own)
+ local entry=pending[1]
+ local ok,applied,failed=pcall(update,own)
+ if ok then return applied,failed end
+ -- A retired component or failed native cut must not escape into the pose
+ -- renderer's retry path and repeatedly destroy an otherwise live opponent.
+ if pending[1]==entry then table.remove(pending,1)end
+ print('[HalfSwordMP] Sever replay failed: '..tostring(applied)..'\n')
+ return 0,1
 end
 return S

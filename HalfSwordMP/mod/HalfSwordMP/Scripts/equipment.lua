@@ -27,14 +27,14 @@ local function native_class(s,kind)
 end
 local captured
 local armor_config
-function Equipment.capture(pawn,lines,geometry,part_id)
+function Equipment.capture(pawn,lines,geometry,part_id,mapping)
     local key,stamp=pawn:GetFullName(),os.time()
     local held={}
     for _,field in ipairs({'Weapon R','Weapon L'})do
         local w=pawn[field];held[#held+1]=valid(w)and w:GetFullName()or'-'
     end
     local hand_signature=table.concat(held,'|')
-    if captured and captured.pawn==key and captured.time==stamp and captured.hands==hand_signature then
+    if captured and captured.pawn==key and captured.time==stamp and captured.hands==hand_signature and captured.mapping==mapping then
         for _,line in ipairs(captured.lines) do lines[#lines+1]=line end;return
     end
     local first=#lines+1
@@ -74,7 +74,7 @@ function Equipment.capture(pawn,lines,geometry,part_id)
             end
         end
     end)
-    captured={pawn=key,time=stamp,hands=hand_signature,lines={}}
+    captured={pawn=key,time=stamp,hands=hand_signature,mapping=mapping,lines={}}
     for i=first,#lines do captured.lines[#captured.lines+1]=lines[i] end
 end
 function Equipment.read(rows)

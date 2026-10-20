@@ -4,6 +4,7 @@ local paths,helpers=require('paths'),require('UEHelpers')
 local Input=dofile(paths.scripts..'/native_input.lua')
 local Equipment=dofile(paths.scripts..'/equipment.lua')
 local Replica=dofile(paths.scripts..'/replica.lua')
+local Voice=dofile(paths.scripts..'/voice.lua')
 local lease
 local pending_pawn,pending_owner
 local input_clock=-1
@@ -139,6 +140,10 @@ function Fighter.update(local_pawn,renderer,waiting)
 end
 function Fighter.render(renderer)
     if lease and lease.replica then
+        if renderer.voice then
+            local sounds,updated=renderer.voice()
+            Voice.update(lease.pawn,sounds,now(lease.local_pawn)-updated<.75)
+        end
         local frame=renderer.frame();lease.last_frame=frame;Replica.update(lease.replica,frame)
         if frame and valid(lease.pawn)then
             local a=lease.pawn:K2_GetActorLocation();local r=frame.root
