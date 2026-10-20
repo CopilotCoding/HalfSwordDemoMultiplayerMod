@@ -13,7 +13,8 @@ function Recovery.tick(pawn,clock,ready)
  if ready and gs:IsGamePaused(world)then gs:SetGamePaused(world,false)end
  if not ready or(_G.HSMPUI and _G.HSMPUI.is_open())then return end
  if _G.HSMPPause and valid(_G.HSMPPause.modal(world))then return end
- if pawn.DED or pawn.Health<=0 then return end
+ local outcome=_G.HSMPSession and _G.HSMPSession.round_outcome and _G.HSMPSession.round_outcome(pawn)
+ if pawn.DED or pawn.Headless or pawn.Health<=0 or outcome=='dead'then return end
  if pawn.Player==false then pawn.Player=true end
  -- GameOnly(false) preserves held keys. Native latent UI can leave input in
  -- UI-only mode without setting ignore-input flags or showing a cursor.

@@ -83,7 +83,19 @@ local function install_spawn_hook()
 end
 function Session.capture_pawn() return local_pawn end
 function Session.round_outcome(pawn)return Round.defeated(pawn)end
-function Session.injury_source()return Damage.injury_source()end
+function Session.injury_source()
+    local pawn,owner=Damage.injury_source()
+    local outcome=Round.defeated(pawn)
+    -- Native Death can set DED while health remains positive. Its owner may
+    -- still be processing the injury/sever, so publish the confirmed result
+    -- from this exact stand-in life to the existing round coordinator.
+    -- Never report transient consciousness from an unconfirmed native fall.
+    -- The stand-in's actor tick is stopped, so its consciousness does not
+    -- recover like the owner's. Keep KO/incapacity decisions with the owner.
+    if outcome=='dead'then
+        return pawn,owner,outcome
+    end
+end
 function Session.sync_injury(pawn)
     if connected and Match.playable()and valid(local_pawn)and (not pawn or same(pawn,local_pawn))and _G.HSMPAvatar then
         -- Native injury events own wounds and health together. A scalar write

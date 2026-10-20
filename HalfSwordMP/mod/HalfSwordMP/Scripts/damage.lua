@@ -209,7 +209,9 @@ function Damage.tick()
  end
  replay_max_ms=math.max(replay_max_ms,(os.clock()-started)*1000)
 end
-function Damage.injury_source()return nil end
+function Damage.injury_source()
+ if valid(remote)and target then return remote,target end
+end
 function Damage.inspect(f)f:write('native_contacts_observed=',captured,'\nnative_injuries_applied=',applied,
  '\nnative_severs_applied=',severs,'\nnative_injury_errors=',errors,
  '\nnative_injury_queue=',#replay_queue,'\nnative_injury_queue_peak=',queue_peak,

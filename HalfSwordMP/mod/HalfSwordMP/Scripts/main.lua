@@ -196,4 +196,4 @@ assert(type(LoopInGameThreadAfterFrames)=='function','HalfSwordMP requires its p
 _G.HSMPUpdate=update
 _G.HSMPUpdateHandle=LoopInGameThreadAfterFrames(1,update)
 
-log("0.10.15: concurrent launcher startup and F5 callback stack isolation. F8: discovery. F9: local pose preview.")
+log("0.10.16: report confirmed native defeats to the shared round coordinator. F8: discovery. F9: local pose preview.")

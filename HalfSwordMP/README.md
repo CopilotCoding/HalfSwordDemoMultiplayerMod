@@ -1,6 +1,6 @@
 # HalfSwordMP
 
-**Experimental multiplayer for Half Sword Demo · 2 players · Version 0.10.15 · Protocol 19**
+**Experimental multiplayer for Half Sword Demo · 2 players · Version 0.10.16 · Protocol 19**
 
 ## About the mod
 
@@ -102,9 +102,10 @@ Two-PC Internet playtests confirmed usable combat, wounds, grabbing,
 dismemberment and enemy weapon pickup, with little perceived lag in those
 sessions. Exact wound and sever visuals have not been proved identical.
 
-The latest code passed **164 automated checks**. Two visible games started from
-one extracted launcher kept opponent weapon meshes visible through three rounds;
-each window also completed ten actual F5 key presses without crashing.
+The latest code passed **168 automated checks**. Visible paired tests exercised
+native death transitions and heavy head injuries in both directions; each case
+ended the shared round and returned two healthy fighters. The preceding
+same-launcher checks covered weapon visibility and actual F5 input.
 
 Intermittent clothing/weapon disappearance and historical crashes are not all
 conclusively resolved. Long sessions still need testing. Detached limbs, ground
@@ -181,6 +182,7 @@ where a change has not proved every reported case resolved.
 
 | Issue encountered | Fix or current status |
 | --- | --- |
+| A native opponent died while its owner stayed alive and the fighter glitched indefinitely. | Restored current-life confirmed-death reporting to the shared coordinator; headless states count as death and input recovery cannot revive that life. |
 | Recoverable knockdowns ended rounds. | Distinguished native KO from a brief fall and required sustained incapacity confirmation. |
 | Badly injured fighters stayed down without ending the round. | Remembered critical damage during recovery checks so regeneration could not cancel confirmed incapacity. |
 | Resets froze mouse or keyboard input. | Used one persistent game-thread timer, retired latent UI callbacks and restored input after possession without flushing held keys. |

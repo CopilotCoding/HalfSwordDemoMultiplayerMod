@@ -114,8 +114,9 @@ local function badly_hurt(pawn)
     return false
 end
 function Round.can_surrender(pawn)
-    if not valid(pawn)or pawn.DED or pawn.Health<=0 then return false end
-    return true
+    if not valid(pawn)or pawn.DED or pawn.Headless or pawn.Health<=0 then return false end
+    local state=guarded[pawn:GetFullName()]
+    return not(state and state.defeat=='dead')
 end
 function Round.open_native_meter(pawn,pc)
     if not Round.can_surrender(pawn)or not valid(pc)then return end
@@ -166,7 +167,7 @@ function Round.guard_pawn(pawn)
         end
     end
     local clock=now(pawn)
-    if pawn.DED or pawn.Health<=0 then s.defeat='dead'
+    if pawn.DED or pawn.Headless or pawn.Health<=0 then s.defeat='dead'
     elseif not s.defeat then
         -- Native Force Fall briefly sets consciousness to zero, then immediately
         -- recovers. Confirm a sustained KO instead of latching that single frame.
