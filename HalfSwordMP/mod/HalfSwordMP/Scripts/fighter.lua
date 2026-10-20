@@ -6,29 +6,34 @@ local Equipment=dofile(paths.scripts..'/equipment.lua')
 local Replica=dofile(paths.scripts..'/replica.lua')
 local Voice=dofile(paths.scripts..'/voice.lua')
 local lease
-local pending_pawn,pending_owner
+local pending_pawn,pending_owner,pending_identity
 local input_clock=-1
 local function valid(o)return o~=nil and o:IsValid()end
 local function same(a,b)return valid(a) and valid(b) and a:GetFullName()==b:GetFullName()end
+local function live(s)return s and valid(s.pawn)and(not s.identity or s.pawn:GetFullName()==s.identity)end
 local function now(p)
     if helpers.GetGameplayStatics then return helpers.GetGameplayStatics():GetRealTimeSeconds(p:GetWorld())end
     return os.clock()
 end
-function Fighter.pawn()return lease and lease.pawn end
+function Fighter.pawn()return live(lease)and lease.pawn or nil end
 function Fighter.owner()return lease and lease.owner end
 function Fighter.contact_frame(bone)
  return lease and lease.last_frame and lease.last_frame.bones['body|'..bone]
 end
 function Fighter.component(id)
-    if not lease or not valid(lease.pawn) then return end
+    if not live(lease) then return end
     if id=='body' then return lease.pawn.Mesh end
     local geometry=id:match('^geometry:(.+)$')
-    if geometry then return lease.equipment and lease.equipment.by_geometry[geometry] end
+    if geometry then
+        local e=lease.equipment;local c=e and e.by_geometry[geometry]
+        if valid(c)and(not e.geometry_names or c:GetFullName()==e.geometry_names[geometry])then return c end
+        return
+    end
     return lease.equipment and lease.equipment.by_part[id]
 end
 function Fighter.neutral()
     if not lease then return end
-    if valid(lease.pawn) then
+    if live(lease) then
         for id in pairs(lease.held or {}) do Input.apply_event(lease.pawn,id-1) end
         if lease.keyboard_crouch then Input.apply_event(lease.pawn,12) end
         for i=1,12 do Input.apply_axis(lease.pawn,i,0) end
@@ -38,21 +43,21 @@ function Fighter.neutral()
     Input.configure('active',lease.local_pawn,lease.controller,0)
 end
 function Fighter.destroy()
-    if valid(pending_pawn) then
+    if valid(pending_pawn)and pending_pawn:GetFullName()==pending_identity then
         local ai=pending_pawn.Controller
         pending_pawn:K2_DestroyActor();if valid(ai) then ai:K2_DestroyActor() end
     end
-    pending_pawn,pending_owner=nil,nil
+    pending_pawn,pending_owner,pending_identity=nil,nil,nil
     if not lease then Input.configure('off');return end
     Fighter.neutral();local old=lease;lease=nil
     Replica.destroy(old.replica)
     Input.configure('off')
-    if valid(old.pawn) then
-        if old.equipment then for _,w in ipairs(old.equipment.weapons) do if valid(w) then w:K2_DestroyActor() end end end
+    if live(old) then
+        if old.equipment then for _,w in ipairs(old.equipment.weapons) do if Equipment.alive(old.equipment,w) then w:K2_DestroyActor() end end end
         old.waiting.equipment(old.pawn,{})
         old.pawn:K2_DestroyActor()
     end
-    if valid(old.controller) then old.controller:K2_DestroyActor() end
+    if valid(old.controller)and(not old.controller_identity or old.controller:GetFullName()==old.controller_identity)then old.controller:K2_DestroyActor() end
 end
 local function step(context)
     if lease and same(context,lease.local_pawn)and _G.HSMPSession then
@@ -61,19 +66,20 @@ local function step(context)
 end
 local function acquire(local_pawn,waiting,root,owner)
     if pending_owner and pending_owner~=owner then Fighter.destroy() end
-    if not valid(pending_pawn)then
+    if not valid(pending_pawn)or pending_pawn:GetFullName()~=pending_identity then
         pending_pawn=waiting.candidate and waiting.candidate(local_pawn,true)or nil
         if not valid(pending_pawn)then pending_pawn=waiting.spawn_at(local_pawn,root)end
-        pending_owner=owner;return
+        pending_owner=owner;pending_identity=valid(pending_pawn)and pending_pawn:GetFullName()or nil;return
     end
     if not waiting.ready(pending_pawn) then return end
-    local p=pending_pawn;pending_pawn,pending_owner=nil,nil
+    local p=pending_pawn;pending_pawn,pending_owner,pending_identity=nil,nil,nil
     local gs,world=helpers.GetGameplayStatics(),local_pawn:GetWorld()
-    lease={pawn=p,local_pawn=local_pawn,ai=p.Controller,player=p.Player,index=p['Player Index'],world=world,
+    lease={pawn=p,identity=p:GetFullName(),local_pawn=local_pawn,ai=p.Controller,player=p.Player,index=p['Player Index'],world=world,
         local_controller=helpers.GetPlayerController(),split_disabled=gs:IsSplitscreenForceDisabled(world),
         owner=owner,held={},desired={},buttons=0,mouse={0,0},waiting=waiting,controller=p.Controller}
     local ok,err=pcall(function()
         assert(valid(lease.controller),'Native opponent has no AI controller')
+        lease.controller_identity=lease.controller:GetFullName()
         assert(waiting.drive(p),'Native opponent is not initialized')
         p['Team Int']=local_pawn['Team Int']==0 and 1 or 0
         -- Retain enemy identity so its defeat cannot respawn controller zero.
@@ -93,23 +99,41 @@ end
 function Fighter.update(local_pawn,renderer,waiting)
     local root=renderer.root();local value,rows=renderer.equipment()
     if not root or not value or not value.present then return end
-    if lease and (not valid(lease.pawn)or not valid(lease.pawn.Mesh)or lease.owner~=renderer.owner())then Fighter.destroy()end
+    if lease and (not live(lease)or not valid(lease.pawn.Mesh)or lease.owner~=renderer.owner())then Fighter.destroy()end
     local p=lease and lease.pawn or acquire(local_pawn,waiting,root,renderer.owner())
     if not valid(p) then return end
-    if lease.replica and not valid(lease.replica.control)then lease.replica=nil end
+    if lease.replica and(not valid(lease.replica.control)or(lease.replica.control_name and lease.replica.control:GetFullName()~=lease.replica.control_name))then lease.replica=nil end
     if not lease.equipment or lease.equipment.signature~=value.signature then
+        if lease.equipment_retry_at and now(local_pawn)<lease.equipment_retry_at then
+            lease.root=root;renderer.use_native(true);return
+        end
         local keep_armor=lease.equipment and lease.equipment.armor_signature==value.armor_signature
         if keep_armor and lease.replica then Replica.clear_weapons(lease.replica)
         else Replica.destroy(lease.replica);lease.replica=nil end
         if lease.equipment then
             for _,w in ipairs(lease.equipment.weapons)do
-                if valid(w)and not same(w,p['Weapon R'])and not same(w,p['Weapon L'])then w:K2_DestroyActor()end
+                if Equipment.alive(lease.equipment,w)and not same(w,p['Weapon R'])and not same(w,p['Weapon L'])then w:K2_DestroyActor()end
             end
         end
         print('[HalfSwordMP] Native stand-in: equip selected loadout\n')
         -- Dropping/changing a weapon must not clear injured clothing or replace
         -- its native cut meshes/materials during this fighter's current life.
-        lease.equipment=Equipment.create_fighter(p,value,rows,keep_armor)
+        local ok,equipment=pcall(Equipment.create_fighter,p,value,rows,keep_armor,lease.equipment)
+        if not ok then
+            lease.equipment_retry_at=now(local_pawn)+.2
+            if lease.equipment_error~=tostring(equipment)then
+                lease.equipment_error=tostring(equipment);print('[HalfSwordMP] Equipment retry: '..lease.equipment_error..'\n')
+            end
+            -- Keep this life and its measured body moving while native hand
+            -- construction catches up. An equipment error must not tear down
+            -- the avatar or reset the current injury/damage identity.
+            lease.root=root
+            if not lease.replica then
+                lease.replica=Replica.create(p,lease.equipment or{weapons={},by_geometry={}})
+            end
+            renderer.use_native(true);return
+        end
+        lease.equipment=equipment;lease.equipment_error=nil;lease.equipment_retry_at=nil
         if lease.replica then Replica.equipment(lease.replica,lease.equipment)
         else lease.replica=Replica.create(p,lease.equipment)end
         waiting.equipment(p,lease.equipment.weapons)
@@ -139,7 +163,7 @@ function Fighter.update(local_pawn,renderer,waiting)
     renderer.use_native(true)
 end
 function Fighter.render(renderer)
-    if lease and lease.replica then
+    if live(lease)and lease.replica and(not renderer.owner or renderer.owner()==lease.owner)then
         if renderer.voice then
             local sounds,updated=renderer.voice()
             Voice.update(lease.pawn,sounds,now(lease.local_pawn)-updated<.75)

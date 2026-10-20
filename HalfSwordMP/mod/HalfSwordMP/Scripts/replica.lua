@@ -6,10 +6,10 @@ function Replica.create(pawn,equipment)
  local transform=pawn.Mesh:GetSocketTransform(FName('Root'),0)
  local c=pawn:AddComponentByClass(StaticFindObject('/Script/PhysicsControl.PhysicsControlComponent'),true,transform,true)
  pawn:FinishAddComponent(c,true,transform);c:SetComponentTickEnabled(true);c:Activate(true)
- local state={pawn=pawn,control=c,bones={},weapons={},equipment=equipment,tick=pawn:IsActorTickEnabled(),
+ local state={pawn=pawn,pawn_name=pawn:GetFullName(),control=c,control_name=c:GetFullName(),bones={},weapons={},equipment=equipment,tick=pawn:IsActorTickEnabled(),
   movement_tick=pawn.CharacterMovement:IsComponentTickEnabled(),transform=transform}
  if valid(pawn.CapsuleComponent)then
-  state.capsule=pawn.CapsuleComponent;state.capsule_mode=state.capsule:GetCollisionEnabled()
+  state.capsule=pawn.CapsuleComponent;state.capsule_name=state.capsule:GetFullName();state.capsule_mode=state.capsule:GetCollisionEnabled()
   state.capsule:SetCollisionEnabled(0)
  end
  local data={MovementType=1,CollisionType=3,GravityMultiplier=0,PhysicsBlendWeight=1,
@@ -42,11 +42,18 @@ function Replica.clear_weapons(state)
  for _,e in pairs(state.weapons)do state.control:DestroyBodyModifier(e.name)end
  state.weapons={}
 end
-function Replica.equipment(state,equipment)state.equipment=equipment end
+function Replica.equipment(state,equipment)
+ state.equipment=equipment
+ -- Native hand setup can refresh bodies even if the received pose is still.
+ for _,entry in ipairs(state.bones)do entry.target=nil end
+end
 function Replica.update(state,frame)
- if not state or not frame or not valid(state.pawn)then return end
+ if not state or not frame or not valid(state.pawn)or(state.pawn_name and state.pawn:GetFullName()~=state.pawn_name)
+  or not valid(state.control)or(state.control_name and state.control:GetFullName()~=state.control_name)then return end
  local p,c,r=state.pawn,state.control,frame.root
- for _,w in ipairs(state.equipment.weapons)do if valid(w)and w:IsActorTickEnabled()then w:SetActorTickEnabled(false)end end
+ for _,w in ipairs(state.equipment.weapons)do
+  if valid(w)and(not state.equipment.weapon_names or w:GetFullName()==state.equipment.weapon_names[w])and w:IsActorTickEnabled()then w:SetActorTickEnabled(false)end
+ end
  p:K2_SetActorLocationAndRotation({X=r[1],Y=r[2],Z=r[3]},{Pitch=r[4],Yaw=r[5],Roll=r[6]},false,{},true)
  for _,entry in ipairs(state.bones)do
   local t=frame.bones['body|'..entry.bone]
@@ -54,7 +61,7 @@ function Replica.update(state,frame)
  end
  for id,t in pairs(frame.colliders)do
   local component=state.equipment.by_geometry[id]
-  if valid(component)then
+  if valid(component)and(not state.equipment.geometry_names or component:GetFullName()==state.equipment.geometry_names[id])then
    if component:IsA('/Script/Engine.MeshComponent')then
    local entry=state.weapons[id]
    if not entry or not valid(entry.component)or entry.component:GetFullName()~=component:GetFullName()then
@@ -82,7 +89,7 @@ function Replica.update(state,frame)
   end
  end
  for id,component in pairs(state.equipment.by_geometry)do
-  if valid(component)and not frame.colliders[id]then
+  if valid(component)and(not state.equipment.geometry_names or component:GetFullName()==state.equipment.geometry_names[id])and not frame.colliders[id]then
    local entry=state.weapons[id]
    if entry then
     if entry.mode~=0 then c:SetBodyModifierCollisionType(entry.name,0);entry.mode=0 end
@@ -91,11 +98,11 @@ function Replica.update(state,frame)
  end
 end
 function Replica.destroy(state)
- if not state or not valid(state.control)then return end
+ if not state or not valid(state.control)or(state.control_name and state.control:GetFullName()~=state.control_name)then return end
  for _,e in ipairs(state.bones)do state.control:DestroyBodyModifier(e.name)end
  for _,e in pairs(state.weapons)do state.control:DestroyBodyModifier(e.name)end
  state.control:K2_DestroyComponent(state.pawn)
- if valid(state.capsule)then state.capsule:SetCollisionEnabled(state.capsule_mode)end
- if valid(state.pawn)then state.pawn:SetActorTickEnabled(state.tick);state.pawn.CharacterMovement:SetComponentTickEnabled(state.movement_tick)end
+ if valid(state.capsule)and(not state.capsule_name or state.capsule:GetFullName()==state.capsule_name)then state.capsule:SetCollisionEnabled(state.capsule_mode)end
+ if valid(state.pawn)and(not state.pawn_name or state.pawn:GetFullName()==state.pawn_name)then state.pawn:SetActorTickEnabled(state.tick);state.pawn.CharacterMovement:SetComponentTickEnabled(state.movement_tick)end
 end
 return Replica

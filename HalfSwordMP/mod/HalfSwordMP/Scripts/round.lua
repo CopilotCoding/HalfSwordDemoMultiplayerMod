@@ -157,6 +157,15 @@ function Round.keep_surrender_prompt(widget)
     if not prompt:IsVisible()then prompt:SetVisibility(4)end
     if prompt:GetRenderOpacity()<1 then prompt:SetRenderOpacity(1)end
 end
+local function route_g(pawn,state,method)
+    state.routing_g=true
+    local ok,err=pcall(function()pawn[method](pawn,{KeyName=FName('G')})end)
+    state.routing_g=false
+    if not ok and state.g_error~=tostring(err)then
+        state.g_error=tostring(err);print('[HalfSwordMP] Native G handler: '..state.g_error..'\n')
+    end
+    return ok
+end
 function Round.guard_pawn(pawn)
     if not valid(pawn)then return end
     local key=pawn:GetFullName()
@@ -240,7 +249,8 @@ function Round.guard_pawn(pawn)
                     pawn['Give Up']=true
                     local name=s.meter:GetFullName();local progress=s.meter['Hold Meter']
                     if s.progress_meter~=name then
-                        s.progress_meter=name;s.progress_value=progress;s.progress_at=clock;s.hold_fallback=nil
+                        if s.progress_meter then s.hold_fallback=true end
+                        s.progress_meter=name;s.progress_value=progress;s.progress_at=clock
                     elseif progress>s.progress_value+.0001 then
                         s.progress_value=progress;s.progress_at=clock
                     end
@@ -248,19 +258,20 @@ function Round.guard_pawn(pawn)
                     -- stopped graph. Keep its single native bar and two-second
                     -- hold, rather than treating its existence as success forever.
                     if not s.hold_fallback and clock-s.progress_at>=.75 then
-                        s.hold_fallback={clock=clock,progress=math.max(0,math.min(1,progress))}
+                        s.hold_fallback=true
                         s.meter.TickFrequency=1
                     end
                     if s.hold_fallback then
-                        progress=math.min(1,s.hold_fallback.progress+(clock-s.hold_fallback.clock)/2)
+                        progress=math.min(1,math.max(progress,(clock-s.g_hold_since-.1)/2))
                         s.meter['Hold Meter']=progress
                         if valid(s.meter.ProgressBar_0)then s.meter.ProgressBar_0:SetPercent(progress)end
                     end
                     Round.keep_surrender_meter(s.meter)
-                elseif clock-s.g_hold_since>=1.6 and(s.g_attempts or 0)>=2
+                elseif clock-s.g_hold_since>=.6 and(s.g_attempts or 0)>=1
                     and clock>=(s.g_fallback or 0)then
-                    s.g_fallback=clock+3
-                    s.meter=Round.open_native_meter(pawn,pc)
+                    s.g_fallback=clock+.5
+                    local ok,meter=pcall(Round.open_native_meter,pawn,pc)
+                    s.meter=ok and meter or nil
                     if valid(s.meter)then Round.keep_surrender_meter(s.meter)end
                 elseif clock-s.g_hold_since>=.3 and clock>=(s.g_retry or 0)
                     and(not pawn['Give Up']or clock-s.g_hold_since>=1)then
@@ -268,10 +279,14 @@ function Round.guard_pawn(pawn)
                     -- Give it time before forwarding a missing input edge.
                     s.g_retry=clock+1;pawn['Give Up']=false;pawn['Give Up 2 (Temp)']=false
                     s.g_attempts=(s.g_attempts or 0)+1
-                    s.routing_g=true;pawn:InpActEvt_G_K2Node_InputKeyEvent_5({KeyName=FName('G')});s.routing_g=false
+                    route_g(pawn,s,'InpActEvt_G_K2Node_InputKeyEvent_5')
                 end
+                -- Native KO/low-consciousness logic can repeatedly remove its
+                -- widget or reset its fill. The held gesture still completes;
+                -- UI lifetime must never be a prerequisite for surrender.
+                if clock-s.g_hold_since>=2.25 then Round.surrender(pawn)end
             elseif s.g_held or valid(s.meter)then
-                s.routing_g=true;pawn:InpActEvt_G_K2Node_InputKeyEvent_6({KeyName=FName('G')});s.routing_g=false
+                route_g(pawn,s,'InpActEvt_G_K2Node_InputKeyEvent_6')
                 pawn['Give Up']=false;pawn['Give Up 2 (Temp)']=false
                 if valid(s.meter)then retire_surrender(s.meter)end
                 s.meter=nil;s.g_hold_since=nil;s.g_retry=nil;s.meter_scan=nil
@@ -402,7 +417,9 @@ function Round.hold(world)
         if _G.HSMPPause and _G.HSMPPause.restore_focus()then return end
         local pc=require("UEHelpers").GetPlayerController()
         if valid(pc) then
-            StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary"):SetInputMode_GameOnly(pc,true)
+            -- Removing a KO/hurt result layer must not flush the player's
+            -- currently held G (or movement keys) halfway through the hold.
+            StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary"):SetInputMode_GameOnly(pc,false)
             pc.bShowMouseCursor=false
         end
     end

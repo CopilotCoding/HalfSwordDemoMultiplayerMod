@@ -19,6 +19,11 @@ local function equipment(a)
 end
 function Geometry.capture(pawn,lines,packed,native,held_signature)
     local now,key=os.time(),path(pawn)
+    if cache and cache.pawn==key then
+        for _,g in ipairs(cache.entries)do
+            if not valid(g.c)or path(g.c)~=g.identity then cache.time=-1;break end
+        end
+    end
     if not cache or cache.pawn~=key or cache.time~=now or cache.held_signature~=held_signature then
         local old=cache and cache.pawn==key and cache.ids or {}
         serial=cache and cache.pawn==key and serial or 0
@@ -47,7 +52,7 @@ function Geometry.capture(pawn,lines,packed,native,held_signature)
                         local id=old[path(c)]
                         if not id then serial=serial+1;id="geom"..serial end
                         cache.ids[path(c)]=id
-                        cache.entries[#cache.entries+1]={c=c,id=id,shape=shape,asset=asset,size=size}
+                        cache.entries[#cache.entries+1]={c=c,identity=path(c),id=id,shape=shape,asset=asset,size=size}
                     end
                 end
             end
@@ -66,8 +71,9 @@ function Geometry.capture(pawn,lines,packed,native,held_signature)
         if valid(c) then
             local mode=c:GetCollisionEnabled()
             local t=c:K2_GetComponentToWorld();local v=t.Translation
+            local transform=packed(t)
             -- Native disabled helpers may be parked below the map. Do not copy them.
-            if mode>=1 and mode<=3 and (v.X-p.X)^2+(v.Y-p.Y)^2+(v.Z-p.Z)^2<25000000 then
+            if transform and mode>=1 and mode<=3 and (v.X-p.X)^2+(v.Y-p.Y)^2+(v.Z-p.Z)^2<25000000 then
                 if not g.responses then
                     local responses={};for channel=0,31 do responses[#responses+1]=tostring(c:GetCollisionResponseToChannel(channel))end
                     g.responses=table.concat(responses);g.material='-'
@@ -76,7 +82,7 @@ function Geometry.capture(pawn,lines,packed,native,held_signature)
                     if valid(m) and safe(path(m)) and path(m):match("^/Game/") then g.material=path(m) end
                     end)
                 end
-                lines[#lines+1]=table.concat({"G",g.id,g.shape,g.asset,packed(t),
+                lines[#lines+1]=table.concat({"G",g.id,g.shape,g.asset,transform,
                     g.size[1],g.size[2],g.size[3],c:GetCollisionObjectType(),g.responses,g.material,mode},"|")
             end
         end

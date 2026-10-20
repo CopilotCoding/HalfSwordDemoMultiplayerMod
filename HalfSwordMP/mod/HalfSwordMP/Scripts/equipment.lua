@@ -5,6 +5,9 @@ local Parts=dofile(require("paths").scripts.."/weapon_parts.lua")
 local Cosmetics=dofile(require('paths').scripts..'/cosmetics.lua')
 local function valid(o)return o~=nil and o:IsValid()end
 local function path(o)return o:GetFullName():gsub("^%S+ ","")end
+function Equipment.alive(state,actor)
+    return valid(actor)and(not state.weapon_names or actor:GetFullName()==state.weapon_names[actor])
+end
 local boolean={['Double Edged']=true,NoStab=true,Shield=true}
 local properties={'Rigidity','Edge Sharpness','Tip Sharpness','Stab Rate','Mat Density','Weapon Length',
     'Wound Shape','Brush Scale','Draw Cut Rate','Dismemberment Level Sharp','Dismemberment Level Blunt','Double Edged','NoStab','Shield'}
@@ -82,7 +85,7 @@ function Equipment.read(rows)
     for _,v in ipairs(rows) do
         if v[1]=="GEAR" and v[2]=="1" then value.present=true
         elseif v[1]=="W" and #v==3 then
-            local w={slot=v[2],class=v[3],components={},state={}};weapons[v[2]]=w;value.weapons[#value.weapons+1]=w
+            local w={slot=v[2],class=v[3],components={},state={},build={table.concat(v,'|')}};weapons[v[2]]=w;value.weapons[#value.weapons+1]=w
             signature[#signature+1]=table.concat(v,"|")
         elseif v[1]=="I" and #v==5 and weapons[v[2]] then
             weapons[v[2]].components[#weapons[v[2]].components+1]={v[3],v[4],v[5]}
@@ -91,7 +94,10 @@ function Equipment.read(rows)
         elseif weapons[v[2]] and Parts.read(weapons[v[2]],v) then
             -- Native material tint/coat values can change during play. The
             -- appearance path copies them without rebuilding hand constraints.
-            if v[1]~='Y'and v[1]~='O'then signature[#signature+1]=table.concat(v,'|')end
+            if v[1]~='Y'and v[1]~='O'then
+                local line=table.concat(v,'|');signature[#signature+1]=line
+                local build=weapons[v[2]].build;build[#build+1]=line
+            end
         elseif v[1]=="A" and #v==3 then
             value.armor[#value.armor+1]={tonumber(v[2]),v[3]};signature[#signature+1]=table.concat(v,"|")
             armor_signature[#armor_signature+1]=table.concat(v,"|")
@@ -103,6 +109,7 @@ function Equipment.read(rows)
     table.sort(signature);value.signature=table.concat(signature,"\n")
     table.sort(mapping);value.mapping_signature=table.concat(mapping,"\n")
     table.sort(armor_signature);value.armor_signature=table.concat(armor_signature,"\n")
+    for _,w in ipairs(value.weapons)do table.sort(w.build);w.signature=table.concat(w.build,'\n');w.build=nil end
     return value
 end
 local armor_field="Armor_84_A1BA4DD44FD262BCA53B9DACF03CDF04"
@@ -250,11 +257,24 @@ function Equipment.clear_hand(pawn,field,kept)
     for _,actor in pairs(kept or{})do
         if valid(actor)and actor:GetFullName()==old:GetFullName()then return end
     end
-    old:K2_DestroyActor();pawn[field]=nil
+    -- Let the native empty-hand path release its grip/constraints. Destroying
+    -- a constrained weapon directly leaves stale native hand references.
+    local name='/Game/Assets/Weapons/Blueprints/Built_Weapons/Weapon_Fists.Weapon_Fists_C'
+    if path(old:GetClass())==name then return end
+    local class=native_class(name,'weapon');assert(valid(class),'Native empty-hand class unavailable')
+    local method=field=='Weapon R'and'Set Up Right Hand Weapon'or'Set Up Left Hand Weapon'
+    local hand=field=='Weapon R'and'hand_r'or'hand_l'
+    local position=pawn.Mesh:GetSocketLocation(FName(hand))
+    local template=pawn:GetWorld():SpawnActor(class,position,{Pitch=0,Yaw=0,Roll=0})
+    assert(valid(template),'Native empty-hand template unavailable')
+    local ok,err=pcall(pawn[method],pawn,class,template,true,true,template['Str Weapon Parts'])
+    local current=pawn[field]
+    if not valid(current)or current:GetFullName()~=template:GetFullName()then template:K2_DestroyActor()end
+    if not ok then error(err)end
 end
-function Equipment.create_fighter(pawn,value,rows,keep_armor)
+function Equipment.create_fighter(pawn,value,rows,keep_armor,previous)
     assert(value and value.present,"Native fighter equipment description missing")
-    local state={pawn=pawn,signature=value.signature,armor_signature=value.armor_signature,weapons={},weapon_by_slot={},properties={},components={},by_part={},by_geometry={},bodies={}}
+    local state={pawn=pawn,signature=value.signature,armor_signature=value.armor_signature,weapons={},weapon_by_slot={},weapon_signatures={},weapon_names={},properties={},components={},by_part={},by_geometry={},bodies={}}
     local armor={}
     for _,a in ipairs(value.armor) do
         local c=native_class(a[2],"armor");assert(valid(c),"Unavailable native armor class: "..a[2])
@@ -275,6 +295,11 @@ function Equipment.create_fighter(pawn,value,rows,keep_armor)
                              {'left','Weapon L','Set Up Left Hand Weapon','hand_l'}}) do
         local w=wanted[slot[1]]
         if w then
+            local actor=previous and previous.weapon_by_slot[w.slot]
+            local held=pawn[slot[2]]
+            local reuse=actor and Equipment.alive(previous,actor)and valid(held)and actor:GetFullName()==held:GetFullName()
+                and type(w.signature)=='string'and previous.weapon_signatures and previous.weapon_signatures[w.slot]==w.signature
+            if not reuse then
             print('[HalfSwordMP] Native equipment: '..slot[1]..' weapon template\n')
             local class=native_class(w.class,'weapon');assert(valid(class),'Unavailable native weapon class: '..w.class)
             local p=pawn.Mesh:GetSocketLocation(FName(slot[4]))
@@ -289,10 +314,13 @@ function Equipment.create_fighter(pawn,value,rows,keep_armor)
             end)
             print('[HalfSwordMP] Native equipment: hand setup returned\n')
             if not ok then template:K2_DestroyActor();error(err) end
-            local actor=pawn[slot[2]]
+            actor=pawn[slot[2]]
             if not valid(actor) or actor:GetFullName()~=template:GetFullName() then template:K2_DestroyActor() end
             assert(valid(actor),'Native hand setup did not produce a weapon')
+            end
             state.weapons[#state.weapons+1]=actor;state.weapon_by_slot[w.slot]=actor
+            state.weapon_names[actor]=actor:GetFullName()
+            state.weapon_signatures[w.slot]=w.signature
             actor['Parent Actor']=pawn;actor.Team=pawn['Team Int']
             for _,r in ipairs(actor:K2_GetComponentsByClass(StaticFindObject('/Script/Engine.PrimitiveComponent'))) do
                 local c=r:get()
@@ -306,14 +334,21 @@ function Equipment.create_fighter(pawn,value,rows,keep_armor)
     return state
 end
 function Equipment.bind(state,value,rows)
-    if not state or state.mapping_signature==value.mapping_signature then return end
+    if not state then return end
+    if state.mapping_signature==value.mapping_signature then
+        local intact=true
+        for _,e in ipairs(state.components)do
+            if not valid(e.component)or e.component:GetFullName()~=e.identity then intact=false;break end
+        end
+        if intact then return end
+    end
     -- Capture IDs describe packet layout, not a change of native equipment.
     -- Refresh lookups without destroying weapons, constraints or worn armor.
-    state.components,state.by_part,state.by_geometry={},{},{}
+    state.components,state.by_part,state.by_geometry,state.geometry_names={},{},{},{}
     local geometry={};for _,r in ipairs(rows or{})do if r[1]=='G'then geometry[r[2]]=r end end
     for _,w in ipairs(value.weapons)do
         local actor=state.weapon_by_slot[w.slot]
-        if valid(actor)then
+        if Equipment.alive(state,actor)then
             local components={}
             for _,r in ipairs(actor:K2_GetComponentsByClass(StaticFindObject('/Script/Engine.PrimitiveComponent')))do
                 local c=r:get();components[c:GetFName():ToString()]=c
@@ -321,8 +356,9 @@ function Equipment.bind(state,value,rows)
             for _,d in ipairs(w.components)do
                 local c=components[d[1]];local g=geometry[d[3]]
                 if valid(c)then
-                    state.components[#state.components+1]={component=c,part=d[2]}
+                    state.components[#state.components+1]={component=c,identity=c:GetFullName(),part=d[2]}
                     state.by_part[d[2]]=c;state.by_geometry[d[3]]=c
+                    state.geometry_names[d[3]]=c:GetFullName()
                     if g and c:IsA('/Script/Engine.StaticMeshComponent')and g[3]=='mesh'then
                         local mesh=Assets.mesh(g[4],false)
                         if valid(mesh)and(not valid(c.StaticMesh)or path(c.StaticMesh)~=path(mesh))then c:SetStaticMesh(mesh)end
@@ -345,7 +381,7 @@ function Equipment.show_fighter(state,rows)
     for _,w in ipairs(state.weapons)do if valid(w)and w.bHidden then w:SetActorHiddenInGame(false)end end
     for _,e in ipairs(state.components)do
         local c=e.component
-        if valid(c)and c:IsA('/Script/Engine.StaticMeshComponent')then
+        if valid(c)and c:GetFullName()==e.identity and c:IsA('/Script/Engine.StaticMeshComponent')then
             local mesh=c.StaticMesh
             -- An owner fallback ID can also name an invisible collision helper.
             -- Show only components actually present in the owner's appearance.
@@ -361,7 +397,7 @@ function Equipment.attached(state,pawn,value)
     for _,w in ipairs(value.weapons)do
         local actor=state.weapon_by_slot[w.slot]
         local held=pawn[w.slot=='right'and'Weapon R'or'Weapon L']
-        if not valid(actor)or not valid(held)or actor:GetFullName()~=held:GetFullName()then return false end
+        if not Equipment.alive(state,actor)or not valid(held)or actor:GetFullName()~=held:GetFullName()then return false end
     end
     return true
 end

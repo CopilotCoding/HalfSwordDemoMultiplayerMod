@@ -9,11 +9,14 @@ local hand_fields={'Weapon R','Weapon L','Grab Component R','Grab Component L',
 local tick_after=0
 local function valid(o)return o~=nil and o:IsValid()end
 local function path(o)return o:GetFullName():gsub('^%S+ ','')end
+local function live(entry)return valid(entry.actor)and entry.actor:GetFullName()==entry.identity end
 local function weapon(o)
  if not valid(o)then return false end
  local c=o:GetClass()
  while valid(c)do
-  if c:GetFName():ToString()=='ModularWeaponBP_C'then return true end
+  local name=c:GetFName():ToString()
+  if name=='Weapon_Fists_C'then return false end
+  if name=='ModularWeaponBP_C'then return true end
   c=c:GetSuperStruct()
  end
  return false
@@ -21,7 +24,7 @@ end
 function Dropped.reset()
  _G.HSMPDropInput=nil
  for _,entry in pairs(tracked)do
-  if entry.granted and valid(entry.actor)then entry.actor:K2_DestroyActor()end
+  if entry.granted and live(entry)then entry.actor:K2_DestroyActor()end
  end
  life,tracked,serial=nil,{},0;pending,consumed,queued={},{},{};tick_after=0
 end
@@ -29,6 +32,10 @@ function Dropped.update(pawn)
  local key=pawn:GetFullName()
  if life~=key then Dropped.reset();life=key end
  local held,signature={},{}
+ local count=0
+ for name,entry in pairs(tracked)do
+  if not live(entry)and not entry.granted then tracked[name]=nil else count=count+1 end
+ end
  for _,field in ipairs(hand_fields)do
   local o=pawn[field]
   if valid(o)then
@@ -38,15 +45,15 @@ function Dropped.update(pawn)
     held[name]=true
     signature[#signature+1]=field..'='..name
     -- A bounded life inventory, without a world-wide object scan on each tick.
-    if not tracked[name]and serial<16 then
-     serial=serial+1;tracked[name]={actor=a,id='drop'..serial}
+    if not tracked[name]and count<16 and serial<9999999 then
+     serial=serial+1;count=count+1;tracked[name]={actor=a,identity=name,id='drop'..serial}
     end
    end
   end
  end
  local state={signature=table.concat(signature,'|'),actors={},names={}}
  for name,entry in pairs(tracked)do
-  if not valid(entry.actor)and not entry.granted then tracked[name]=nil
+  if not live(entry)and not entry.granted then tracked[name]=nil
   elseif not held[name]then
    state.actors[#state.actors+1]=entry;state.names[name]=true
   end
@@ -62,35 +69,37 @@ function Dropped.capture(state,lines,packed,capture_mesh,budget)
  local count=0
  for _,entry in ipairs(state.actors)do
   local actor=entry.actor
-  if not entry.description and valid(actor)then
+  if not entry.description and live(entry)then
    local rows={};Parts.capture(actor,entry.id,rows)
    entry.description={class=path(actor:GetClass()),rows=rows}
   end
-  if valid(actor)then entry.transform=packed(actor:GetTransform())end
+  if live(entry)then entry.transform=packed(actor:GetTransform())end
   if entry.description and entry.transform then
    lines[#lines+1]=table.concat({'DW',entry.id,entry.description.class,entry.transform,entry.granted or 0},'|')
    for _,row in ipairs(entry.description.rows)do lines[#lines+1]='D'..row end
   end
-  if valid(actor)and not entry.granted and not actor.bHidden then
+  if live(entry)and not entry.granted and not actor.bHidden then
    -- Native hand/module setup can replace mesh components on the same actor.
    -- A lifetime cache of the old components makes subsequent drops invisible.
    if not entry.components or os.clock()>=(entry.component_scan or 0)then
     entry.component_scan=os.clock()+.5
-    entry.components={}
+    entry.components={};entry.component_names={}
     for _,r in ipairs(actor:K2_GetComponentsByClass(StaticFindObject('/Script/Engine.StaticMeshComponent')))do
      local c=r:get()
-     if valid(c)then entry.components[#entry.components+1]=c end
+     if valid(c)then entry.components[#entry.components+1]=c;entry.component_names[c]=c:GetFullName()end
     end
    end
    for index,c in ipairs(entry.components)do
-    local asset=valid(c)and c.StaticMesh
+    local current=valid(c)and c:GetFullName()==entry.component_names[c]
+    if not current then entry.component_scan=0 end
+    local asset=current and c.StaticMesh
     if count<budget and valid(asset)and c:IsVisible()and not c.bHiddenInGame then
      local name=path(asset)
      if name:match('^/Game/Assets/Weapons/')and not name:find('/Collisions/',1,true)then
-      local t=c:K2_GetComponentToWorld();local p=t.Translation
-      if math.abs(p.X)<=10000000 and math.abs(p.Y)<=10000000 and math.abs(p.Z)<=10000000 then
+      local t=c:K2_GetComponentToWorld();local transform=packed(t)
+      if transform then
        local id=entry.id..'_'..index
-       lines[#lines+1]='C|'..id..'|D|'..name..'|'..packed(t)
+       lines[#lines+1]='C|'..id..'|D|'..name..'|'..transform
        capture_mesh(lines,c,id,false,false,true);count=count+1
       end
      end
@@ -170,11 +179,25 @@ function Dropped.tick(pawn,renderer)
  for _,request in ipairs(requests or{})do
   if request.owner==own and root then
    for _,entry in ipairs(state.actors)do
-    if entry.id==request.id and not entry.granted and valid(entry.actor)and not entry.actor.bHidden
+    if entry.id==request.id and not entry.granted and live(entry)and not entry.actor.bHidden
       and distance(entry.actor:K2_GetActorLocation(),root)<=240^2 then
      entry.granted=renderer.owner()
+     entry.granted_at=clock
      entry.actor:SetActorHiddenInGame(true);entry.actor:SetActorEnableCollision(false);entry.actor:SetActorTickEnabled(false)
     end
+   end
+  end
+ end
+ -- A cleared request acknowledges native pickup on the receiver. Retire its
+ -- old hidden source copy after a grace period, keeping the item ID unique
+ -- for this life so delayed packets cannot claim a later dropped weapon.
+ for name,entry in pairs(tracked)do
+  if entry.granted and entry.granted==renderer.owner()and clock-(entry.granted_at or clock)>=1 then
+   local requested=false
+   for _,request in ipairs(requests or{})do if request.owner==own and request.id==entry.id then requested=true;break end end
+   if not requested then
+    if live(entry)then entry.actor:K2_DestroyActor()end
+    tracked[name]=nil
    end
   end
  end

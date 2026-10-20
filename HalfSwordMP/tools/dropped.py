@@ -3,7 +3,7 @@ import re
 from equipment import class_path,validate_construction,construction_lines
 from snapshot import transform
 
-ITEM_ID=re.compile(r'^drop(?:[1-9]|1[0-6])$')
+ITEM_ID=re.compile(r'^drop[1-9][0-9]{0,6}$')
 def owner(value,zero=False):return type(value)is int and (0 if zero else 1)<=value<=9999999
 def validate_items(items):
  if not isinstance(items,list)or len(items)>16:return False

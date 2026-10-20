@@ -65,7 +65,8 @@ function Effects.capture(pawn,lines,packed)
         if seen[id] then return end
         seen[id],count=true,count+1
         local t=c:K2_GetComponentToWorld()
-        lines[#lines+1]="N|"..id.."|"..path(asset).."|"..packed(t)
+        local transform=packed(t);if not transform then return end
+        lines[#lines+1]="N|"..id.."|"..path(asset).."|"..transform
         local entry=cache[id]
         if not entry or now-entry.time>.2 then entry={time=now,parameters=parameters(c)};cache[id]=entry end
         for _,p in ipairs(entry.parameters) do

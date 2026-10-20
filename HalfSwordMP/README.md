@@ -1,6 +1,6 @@
 # HalfSwordMP
 
-**Experimental multiplayer for Half Sword Demo · 2 players · Version 0.10.17 · Protocol 20**
+**Experimental multiplayer for Half Sword Demo · 2 players · Version 0.10.18 · Protocol 21**
 
 ## About the mod
 
@@ -102,11 +102,14 @@ Two-PC Internet playtests confirmed usable combat, wounds, grabbing,
 dismemberment and enemy weapon pickup, with little perceived lag in those
 sessions. Exact wound and sever visuals have not been proved identical.
 
-The latest code passed **176 automated checks**. Visible paired tests applied
-native arm cuts to both owners, completed injured hold-G actions, recovered a
-deliberately stalled meter, and returned healthy fighters after shared resets.
-Repeated E transitions kept both fighters visible. Native pain and breathing
-playback, volume changes and stopping were checked in both directions.
+This update prevents invalid temporary weapon meshes from interrupting the
+whole fighter's movement stream during equipment changes. It keeps the same
+opponent through hand-equipment retries and makes a held G complete even when
+injury interrupts native input or removes the meter. Both PCs need this release.
+
+**187 automated checks passed.** Paired local tests covered sheath/draw, enemy
+weapon drops/pickups, and six injured/KO/interrupted-meter surrender resets,
+with at most one give-up meter.
 
 Intermittent clothing/weapon disappearance and historical crashes are not all
 conclusively resolved. Long sessions still need testing. Detached limbs, ground
@@ -170,10 +173,10 @@ where a change has not proved every reported case resolved.
 | Visual proxies lacked cuts, stabs or weapon contact. | Used native fighters, collision bodies and weapon/query components. |
 | Launches, phantom impacts and excessive knockback. | Removed competing remote simulation, extra capsule blocking and duplicate replay forces. Native knockback remains unchanged. |
 | Fast swings separated weapons from hands. | Interpolated relative to measured hands, stopped competing ticks, gave held meshes precedence over stowed duplicates, and refreshed equipment mappings together. Brief native physics offsets remain possible. |
-| E weapon transitions made a fighter vanish or desync. | Refreshed collision geometry immediately when inventory changed and invalidated cached component mappings with the appearance inventory. Repeated local transitions passed; arbitrary transitions still need playtesting. |
+| E weapon transitions made a fighter vanish or desync. | Filter invalid temporary mesh transforms before transmission, refresh replaced component mappings, and preserve the fighter during native hand-setup retries. Paired sheath/draw and enemy-pickup checks passed. |
 | Old cleanup references could affect recycled native objects. | Check cached actor/component identities before hiding or restoring them. Three paired reset cycles with weapon changes and forced garbage collection passed. |
 | Opponent weapons or modular parts were missing. | Captured native construction, mapped components and restored render flags. Later intermittent disappearance remains unconfirmed. |
-| Dropped weapons disappeared from the other player's view. | Tracked released native actors and sent mesh poses; refreshed replaced component lists. Intermittent cases remain open. |
+| Dropped weapons disappeared from the other player's view. | Track released actors with refreshed mesh lists, exclude temporary fists, and retire acknowledged transfers without exhausting the life inventory. |
 | Enemy drops could be seen but not used. | Added validated ownership transfer and native hand setup for pickup. |
 | Injuries appeared only on the opponent representation. | Relayed deduplicated native injury events to the victim's owning PC. |
 | Self-dismemberment did not appear and severed fighters looked choppy. | Corrected a native paint TMap mistakenly read as an array. Owner-side cuts now complete; replay errors no longer repeatedly destroy the remote avatar. Paired arm-cut tests and a player retest passed. |
@@ -194,7 +197,7 @@ where a change has not proved every reported case resolved.
 | The game stayed paused or in slow motion. | Restored active-match pause/time-dilation state while respecting open menus. |
 | Escape stacked menus or trapped focus over settings. | Retired duplicate pause layers and restored native settings focus. Settings have automated coverage; complete visual testing remains limited. |
 | Giving up was instant or changed orientation. | Used the native hold-G meter and preserved player identity. |
-| Downed players could not open or finish the give-up meter. | Added bounded input retries and native-widget fallback. If an existing meter stalls, the same bar completes at the native two-second rate; releasing G cancels it. |
+| Downed players could not open or finish the give-up meter. | Preserve held G while suppressing death UI, recover failed native input, and complete the hold despite meter removal/replacement. Releasing G or opening a menu cancels it. |
 | Hurt hints vanished or the give-up meter doubled. | Kept one current-life HUD/meter; disabled widget ticking no longer incorrectly indicates retirement. |
 | Opponent motion looked low-rate or heavily interpolated. | Raised the target to 30 Hz, reused samples and reduced redundant input/appearance work. |
 | Combat contact caused stutters. | Budgeted/deduplicated injury replay, throttled discovery and reduced file/material work. Playtesters reported improvement; hardware still matters. |

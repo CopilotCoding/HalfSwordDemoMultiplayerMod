@@ -20,6 +20,16 @@ function Clothing.update(pawn,driven)
    end
    local path=asset:GetFullName():gsub('^%S+ ','')
    local worn=path:sub(1,22)=='/Game/Assets/Clothing/'or path:sub(1,19)=='/Game/Assets/Armor/'
+   if driven and(c:GetFullName()==body or worn)then
+    -- The driven fighter has no native actor Tick. Render-only refresh can
+    -- strand its bones/bounds after it leaves view, changes gear or ragdolls.
+    -- Keep native component pose/bounds updates independent of visibility.
+    if c.VisibilityBasedAnimTickOption~=0 then c.VisibilityBasedAnimTickOption=0 end
+    if not c:IsComponentTickEnabled()then c:SetComponentTickEnabled(true)end
+    if c:IsA('/Script/Engine.SkeletalMeshComponent')and c.bEnableUpdateRateOptimizations then
+     c.bEnableUpdateRateOptimizations=false
+    end
+   end
    local parent=worn and c:GetAttachParent()or nil
    if valid(parent)and parent:GetFullName()==body and not c.bUseAttachParentBound then
     c.bUseAttachParentBound=true

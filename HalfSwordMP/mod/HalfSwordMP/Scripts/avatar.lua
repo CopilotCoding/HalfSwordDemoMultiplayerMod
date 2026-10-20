@@ -19,6 +19,13 @@ local function path(o) return o:GetFullName():gsub("^%S+ ", "") end
 local function safe(s) return #s <= 240 and s:match("^[%w_./:%-]+$") ~= nil end
 local function packed(t)
     local p,q,s=t.Translation,t.Rotation,t.Scale3D
+    -- Native hand/slot setup briefly exposes uninitialized mesh transforms.
+    -- One zero quaternion must not invalidate the whole moving fighter packet.
+    for _,row in ipairs({{p.X,p.Y,p.Z,10000000},{q.X,q.Y,q.Z,1.01},{s.X,s.Y,s.Z,100}})do
+        for i=1,3 do if row[i]~=row[i]or math.abs(row[i])>row[4]then return end end
+    end
+    local norm=q.X*q.X+q.Y*q.Y+q.Z*q.Z+q.W*q.W
+    if q.W~=q.W or math.abs(q.W)>1.01 or norm<.95 or norm>1.05 then return end
     return string.format("%.2f|%.2f|%.2f|%.5f|%.5f|%.5f|%.5f|%.4f|%.4f|%.4f",
         p.X,p.Y,p.Z,q.X,q.Y,q.Z,q.W,s.X,s.Y,s.Z)
 end
@@ -94,7 +101,8 @@ local function capture_mesh(lines, c, id, skinned, shared,native)
             end
         end
         for _,entry in ipairs(physical_bones)do
-            lines[#lines+1]='B|body|'..entry.text..'|'..packed(c:GetSocketTransform(entry.bone,0))
+            local t=packed(c:GetSocketTransform(entry.bone,0))
+            if t then lines[#lines+1]='B|body|'..entry.text..'|'..t end
         end
     end
     if skinned and not shared and not native then
@@ -102,7 +110,10 @@ local function capture_mesh(lines, c, id, skinned, shared,native)
             local n = c:GetBoneName(i)
             local text = n:ToString()
             if safe(text) and #text <= 64 then
-                if not shared then lines[#lines+1] = "B|"..id.."|"..text.."|"..packed(c:GetSocketTransform(n,0)) end
+                if not shared then
+                    local t=packed(c:GetSocketTransform(n,0))
+                    if t then lines[#lines+1] = "B|"..id.."|"..text.."|"..t end
+                end
                 if c:IsBoneHiddenByName(n) then lines[#lines+1] = "H|"..id.."|"..text end
             end
         end
@@ -146,6 +157,11 @@ function Avatar.capture(pawn, serial,native)
     local dropped=Dropped.update(pawn)
     local now,pawn_key = os.time(),path(pawn)
     local entries
+    if inventory_cache and inventory_cache.pawn==pawn_key then
+        for _,e in ipairs(inventory_cache.entries)do
+            if not valid(e.c)or path(e.c)~=e.identity then inventory_cache=nil;break end
+        end
+    end
     if inventory_cache and inventory_cache.pawn == pawn_key and inventory_cache.time == now
         and inventory_cache.held_signature==dropped.signature then
         entries = inventory_cache.entries
@@ -201,7 +217,7 @@ function Avatar.capture(pawn, serial,native)
         end
         count = count + 1
         local id = "part"..count
-        entries[#entries+1] = {c=c,id=id,kind=kind or(shared and "L" or skinned and "K" or "S"),asset=path(asset),skinned=skinned,shared=shared}
+        entries[#entries+1] = {c=c,identity=key,id=id,kind=kind or(shared and "L" or skinned and "K" or "S"),asset=path(asset),skinned=skinned,shared=shared}
     end
     local function owner(o,kind)
         if dropped.names[o:GetFullName()]then return end
@@ -239,8 +255,9 @@ function Avatar.capture(pawn, serial,native)
         local c = entry.c
         if valid(c) then
             local t = c:K2_GetComponentToWorld()
-            if math.abs(t.Translation.X) <= 10000000 and math.abs(t.Translation.Y) <= 10000000 and math.abs(t.Translation.Z) <= 10000000 then
-                lines[#lines+1] = "C|"..entry.id.."|"..entry.kind.."|"..entry.asset.."|"..packed(t)
+            local transform=packed(t)
+            if transform then
+                lines[#lines+1] = "C|"..entry.id.."|"..entry.kind.."|"..entry.asset.."|"..transform
                 capture_mesh(lines,c,entry.id,entry.skinned,entry.shared,native)
             end
         end
