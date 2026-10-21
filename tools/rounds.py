@@ -45,28 +45,28 @@ class Rounds:
         self.session=secrets.token_hex(16)
         self.id=0;self.phase="waiting";self.reason="waiting";self.deadline=0
         self.previous_owners=(None,None)
+        self.current_owners=(None,None)
         self.map=None
     def restart(self,local,remote,connected,allow_respawning=False):
-        if allow_respawning and connected and self.phase=='respawning'and self.id>0 and self.map is not None:
-            if local and remote and local['map']==remote['map']==self.map:
-                self.previous_owners=(local['vitals'].get('owner_id'),remote['vitals'].get('owner_id'))
-            self.id+=1;self.reason='respawning';self.deadline=0;return True
-        if (not connected or self.phase not in ("playing","restart") or self.id<1
-                or not local or not remote or local["map"]!=remote["map"] or local["map"]!=self.map):
-            return False
-        owners=(local["vitals"].get("owner_id"),remote["vitals"].get("owner_id"))
-        if not all(owners):return False
-        self.previous_owners=owners
-        self.id+=1;self.phase="respawning";self.reason="respawning";self.deadline=0
-        return True
+        if connected and self.id>0 and self.map is not None and self.phase in ('playing','restart','waiting','respawning'):
+            if self.phase in ('waiting','respawning')and not allow_respawning:return False
+            if (local and local['map']!=self.map)or(remote and remote['map']!=self.map):return False
+            owners=list(self.current_owners)
+            for i,p in enumerate((local,remote)):
+                if p and p['vitals'].get('owner_id'):owners[i]=p['vitals']['owner_id']
+            if not all(owners):return False
+            self.previous_owners=tuple(owners)
+            self.id+=1;self.phase='respawning';self.reason='respawning';self.deadline=0;return True
+        return False
     def observe(self,local,remote,connected,now):
         if not connected:
             self.phase="waiting";self.reason="waiting"
         elif local and remote and local["map"]==remote["map"]:
             if self.map is not None and self.map!=local["map"]:
-                self.session=secrets.token_hex(16);self.id=0;self.phase="waiting";self.previous_owners=(None,None)
+                self.session=secrets.token_hex(16);self.id=0;self.phase="waiting";self.previous_owners=(None,None);self.current_owners=(None,None)
             self.map=local["map"]
             owners=(local["vitals"].get("owner_id"),remote["vitals"].get("owner_id"))
+            if all(owners):self.current_owners=owners
             if self.phase=="restart":
                 if now>=self.deadline:
                     self.id+=1;self.phase="respawning";self.reason="respawning"

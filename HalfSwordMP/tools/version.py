@@ -1,2 +1,0 @@
-VERSION = "0.10.10"
-PROTOCOL = 17
