@@ -196,4 +196,4 @@ assert(type(LoopInGameThreadAfterFrames)=='function','HalfSwordMP requires its p
 _G.HSMPUpdate=update
 _G.HSMPUpdateHandle=LoopInGameThreadAfterFrames(1,update)
 
-log("0.10.18: preserve fighter state through equipment transitions; reliable injured surrender. F8: discovery. F9: local pose preview.")
+log("0.11.0: Steam lobbies/P2P and password-protected direct sessions. F8: discovery. F9: local pose preview.")

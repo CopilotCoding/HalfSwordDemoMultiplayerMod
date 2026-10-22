@@ -1,12 +1,12 @@
 # HalfSwordMP
 
-**Experimental multiplayer for Half Sword Demo · 2 players · Version 0.10.18 · Protocol 21**
+**Experimental multiplayer for Half Sword Demo · 2 players · Version 0.11.1 · Protocol 22**
 
 ## About the mod
 
 HalfSwordMP turns the demo's arena into a two-player fight. Choose your fighter
-and equipment, host a match, and have a friend join by IP over LAN or the
-Internet. Use the game's normal controls and combat, then start another round
+and equipment, host a Steam lobby or a Direct IP match, and have a friend join.
+Use the game's normal controls and combat, then start another round
 together. No room code or preliminary single-player fight is needed.
 
 Each PC controls its own native fighter. A native opponent represents the other
@@ -17,18 +17,27 @@ the game, and a Python companion handles networking and updates.
 
 Features include selected loadouts and clothing colours, native weapon contact,
 wounds and dismemberment, enemy weapon pickup, shared character voice sounds, and an F5 panel
-with restart controls, measured network delay and optional host updates.
+with Steam friends/invites, public Steam lobbies, optional passwords, restart
+controls, measured network delay and optional host updates.
 
 ## Install
 
 Both players need **matching Half Sword Demo installations**, the same mod
 release, and **Python 3.10 or newer** available as `python`.
+Steam mode additionally needs **64-bit Python** and Steam signed in and online.
+The launcher automatically finds a compatible Steam runtime locally or downloads
+a checksum-verified copy from Valve's official repository. SteamVR and manual
+SDK downloads are not required. The Steam DLL is cached locally and is not in
+this ZIP or host update packages. First-time setup may need Internet access.
 
 1. Close all Half Sword windows before installing or updating.
 2. Extract the ZIP and open its `HalfSwordMP` folder.
 3. Run **Start Multiplayer.cmd**. It finds the usual Steam location or asks for
    your demo folder, installs the mod, and opens the game.
 4. Repeat on the other PC.
+
+**Upgrading from 0.10.x or 0.11.0:** extract this ZIP and run its launcher on both
+PCs. Earlier package validators do not support the new runtime layout.
 
 After installation, you can launch normally through **Steam**. A hidden
 companion starts automatically and exits with that game window. Python must
@@ -43,12 +52,36 @@ and scripts without modifying the original game EXE or PAK files. The ZIP
 contains no game assets, saves, personal addresses or captured gameplay state.
 Connection preferences stay on your PC.
 
-## Play
+## Play through Steam
+
+1. Select your fighter and loadout in the normal game menu.
+2. Open **Multiplayer / F5 → Steam**. Enter a lobby name if wanted.
+3. Click the visibility button to choose **Friends only**, **Invite only** or
+   **Public**. Set an optional password, then click **Create lobby**.
+4. Choose **Friends**, then click a friend to send a Steam invitation. The guest
+   accepts the invitation and uses **Accept invite** in F5 if prompted. Enter the
+   password first if the host set one. Without an active lobby, the Friends list
+   lets you join friends who have a lobby.
+5. Alternatively, choose **Public lobbies / Refresh** and click a listed match.
+6. Choose **Enter multiplayer match** on both PCs and close F5.
+
+Steam handles P2P/relay connections without manual port forwarding. Lobbies hold
+two players. Invite-only and friends-only lobbies stay out of the public list;
+the list shows only this mod's Steam lobbies. Hosts remain responsible for the
+match; leaving ends the session rather than migrating gameplay to another host.
+
+## Play through Direct IP
 
 1. Select your fighter and loadout in the game's main menu.
-2. Open **Multiplayer / F5**. Choose **Host** on one PC; its IP field can stay blank.
-3. On the other PC, enter the host's address and matching port, then choose **Join**.
+2. Open **Multiplayer / F5 → Direct IP / Port Forward**. Set an optional password
+   and choose **Host** on one PC; its IP field can stay blank.
+3. On the other PC, enter the host's address, matching port and password, then **Join**.
 4. Choose **Enter multiplayer match** on both PCs. Close F5 and fight.
+
+Direct IP does not require Steam networking and never advertises a public listing.
+Passwords are not saved in preferences or published in lobby metadata. A password
+is optional, not a required room code. Both transports verify it before admitting
+the guest and authenticate the resulting gameplay session.
 
 | Control | Action |
 | --- | --- |
@@ -67,7 +100,7 @@ The restart button waits during normal respawn and allows another attempt if
 setup stalls for over six seconds. To change your fighter, return to the main
 menu, make your selection, then enter multiplayer again.
 
-## Connection settings
+## Direct IP connection settings
 
 | Situation | Address and ports |
 | --- | --- |
@@ -81,7 +114,7 @@ without a conflict. “Address already in use” usually means another host alre
 occupies that listening port.
 
 The mod does not configure your router or firewall. CGNAT can prevent ordinary
-port forwarding. Sessions have no password; the first joining peer takes the guest slot.
+port forwarding. Use Steam mode if ordinary forwarding is unavailable.
 
 ## Optional updates
 
@@ -93,7 +126,10 @@ The host shares its mod package; there is no public update server.
   staged package after exit.
 
 Updates wait for all windows using that installed game executable to close.
-For Internet updates, also forward **TCP 7778**, or your gameplay port plus one.
+Direct IP Internet updates also need **TCP 7778**, or your gameplay port plus one.
+Steam updates travel over the admitted Steam connection and need no extra port;
+join the host before checking. Incompatible protocol releases require manual ZIP
+installation before joining.
 Manual ZIP installation works too. Keep both PCs on the same release.
 
 ## Status and troubleshooting
@@ -102,14 +138,16 @@ Two-PC Internet playtests confirmed usable combat, wounds, grabbing,
 dismemberment and enemy weapon pickup, with little perceived lag in those
 sessions. Exact wound and sever visuals have not been proved identical.
 
-This update prevents invalid temporary weapon meshes from interrupting the
-whole fighter's movement stream during equipment changes. It keeps the same
-opponent through hand-equipment retries and makes a held G complete even when
-injury interrupts native input or removes the meter. Both PCs need this release.
+**221 automated checks passed.** Real Steam tests created and closed all three
+lobby types, verified public visibility and exercised native message loopback.
+Two visible local game copies played a password-protected Direct IP session and
+completed host/client round restarts. Two-account Steam invitations, remote P2P/
+relay combat and Internet update transfer still need a real two-PC playtest.
+Use separate Steam accounts for that test; two windows on one account can use
+the Direct IP loopback setup above instead.
 
-**187 automated checks passed.** Paired local tests covered sheath/draw, enemy
-weapon drops/pickups, and six injured/KO/interrupted-meter surrender resets,
-with at most one give-up meter.
+Version 0.11.1 also passed a fresh automatic runtime download with local library
+search disabled, Valve signature verification and real Steam initialization.
 
 Intermittent clothing/weapon disappearance and historical crashes are not all
 conclusively resolved. Long sessions still need testing. Detached limbs, ground
@@ -152,7 +190,10 @@ where a change has not proved every reported case resolved.
 | --- | --- |
 | Installer crashed on `hashlib.file_digest`. | Replaced it with chunked SHA-256 hashing for older supported Python versions. |
 | Equipment choices differed from a Steam launch. | Preserved native selection/startup and tested compatible builds; the original cause was not conclusively isolated. |
-| Room codes and private settings complicated sharing. | Switched to direct IP; excluded preferences and generated paths from the ZIP. |
+| Room codes and private settings complicated sharing. | Kept passwords optional, added Steam invitations alongside Direct IP, and excluded preferences/generated paths from the ZIP. |
+| Connecting required IP sharing and router setup. | Added Steam P2P/relay transport, friends/invite-only/public lobbies and a Steam-only browser. Real lobby visibility passed; two-account play remains untested. |
+| A session admitted anyone who reached the host first. | Added host-verified password admission and session authentication for both transports. Wrong passwords cannot take the gameplay slot. |
+| Updates assumed every host had an IP/HTTP address. | Added bounded reliable Steam update transfer after peer admission, retaining staged installation on exit. |
 | Hosting with a blank IP failed. | Made the destination address join-only and reported occupied host ports explicitly. |
 | The guest had the wrong camera or limited movement. | Kept each PC in control of its own native player. |
 | Joining needed an existing enemy or showed a dummy. | Added native opponent creation and quarantined inactive arena actors. |

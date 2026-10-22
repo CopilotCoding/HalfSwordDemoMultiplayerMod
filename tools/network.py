@@ -20,11 +20,12 @@ from damage import validate_damage,damage_text,read_damage
 from rounds import Rounds,validate_round
 from frames import ArenaFrame,pose_frame,damage_frame,input_frame
 from controls import validate_input,read_input,input_text
+import admission
 
-MAGIC = b"HSMPD"
+MAGIC = b"HSMPJ"
 MAX_PACKET = 65536
 MAX_DATAGRAM = 1200
-FRAGMENT = b"HSF19"
+FRAGMENT = b"HSF22"
 CHUNK = 1100
 TIMEOUT = 5.0
 NONCE = re.compile(r"^[a-f0-9]{32}$")
@@ -132,12 +133,16 @@ def atomic_write(path: Path, text: str) -> bool:
 
 class Peer:
     """State machine independent of sockets so handshake and replay rules are testable."""
-    def __init__(self, role: str, code: str | None, build: str, target=None):
+    def __init__(self, role: str, code: str | None, build: str, target=None, password=""):
         if role not in ("host", "join"):
             raise ValueError("Choose host or join")
         if code is not None and (not isinstance(code,str) or not 16 <= len(code) <= 128):
             raise ValueError("Invalid private transport key")
         self.role, self.build, self.target = role, build, target
+        self.password=admission.password(password)
+        self.password_salt=secrets.token_hex(16)
+        self.password_base=admission.base_key(self.password,self.password_salt)if self.password and role=='host'else None
+        self.password_cache={};self.auth_key=None;self.error_message=''
         self.key = hashlib.sha256(code.encode("utf-8")).digest() if code is not None else None
         self.session = secrets.token_hex(16)
         self.remote_session = None
@@ -159,21 +164,27 @@ class Peer:
     def ping(self,now):
         self.probes={token:stamp for token,stamp in self.probes.items()if now-stamp<TIMEOUT}
         token=secrets.token_hex(16);self.probes[token]=now
-        return {'kind':'ping','build':self.build,'session':self.session,'peer':self.remote_session,'token':token}
+        return admission.seal({'kind':'ping','build':self.build,'session':self.session,'peer':self.remote_session,'token':token},self.auth_key)
 
     def hello(self) -> dict:
         return {"kind": "hello", "build": self.build, "session": self.session}
 
     def state(self, pose, damage=None,round_state=None,restart_request=None) -> dict:
         self.sequence += 1
-        return {"kind": "state", "build": self.build, "session": self.session,
+        return admission.seal({"kind": "state", "build": self.build, "session": self.session,
                 "peer": self.remote_session, "seq": self.sequence, "pose": pose,
-                "damage": damage,"round":round_state,"restart_request":restart_request}
+                "damage": damage,"round":round_state,"restart_request":restart_request},self.auth_key)
 
     def controls(self,control):
         self.input_sequence+=1
-        return {"kind":"input","build":self.build,"session":self.session,"peer":self.remote_session,
-                "seq":self.input_sequence,"input":control}
+        return admission.seal({"kind":"input","build":self.build,"session":self.session,"peer":self.remote_session,
+                "seq":self.input_sequence,"input":control},self.auth_key)
+
+    def welcome(self,client,host):
+        key=admission.session_key(self.password_base,client,host,self.build)if self.password_base else None
+        return {'kind':'welcome','build':self.build,'session':host,'peer':client,
+                'password_required':key is not None,'password_salt':self.password_salt if key else '',
+                'password_proof':admission.proof(key)if key else ''}
 
     def receive(self, message: dict, address, now: float) -> list[tuple[dict, tuple]]:
         if message.get("build") != self.build:
@@ -182,12 +193,19 @@ class Peer:
         if not isinstance(session, str) or not NONCE.fullmatch(session):
             return []
         kind = message.get("kind")
+        if kind not in ('hello','welcome'):
+            key=self.auth_key
+            if self.role=='host'and self.address is None and self.password_base:
+                candidate=self.pending.get(address)
+                if candidate is None or now-candidate[2]>=TIMEOUT:return []
+                key=admission.session_key(self.password_base,candidate[0],candidate[1],self.build)
+            if not admission.verify(message,key):return []
         if kind in ('ping','pong'):
             token=message.get('token')
             if (not self.connected or address!=self.address or session!=self.remote_session
                     or message.get('peer')!=self.session or not isinstance(token,str)or not NONCE.fullmatch(token)):return []
             if kind=='ping':
-                return [({'kind':'pong','build':self.build,'session':self.session,'peer':session,'token':token},address)]
+                return [(admission.seal({'kind':'pong','build':self.build,'session':self.session,'peer':session,'token':token},self.auth_key),address)]
             sent=self.probes.pop(token,None)
             if sent is not None and 0<=now-sent<TIMEOUT:
                 self.rtt_ms=(now-sent)*1000;self.rtt_samples=(self.rtt_samples+[self.rtt_ms])[-20:]
@@ -196,8 +214,7 @@ class Peer:
             if self.address is not None:
                 # A repeated hello may be a lost welcome, but cannot replace an active session.
                 if self.address == address and self.remote_session == session:
-                    return [({"kind": "welcome", "build": self.build,
-                              "session": self.session, "peer": session}, address)]
+                    return [(self.welcome(session,self.session),address)]
                 return []
             self.pending = {a: p for a, p in self.pending.items() if now - p[2] < TIMEOUT}
             old = self.pending.get(address)
@@ -206,12 +223,26 @@ class Peer:
                     return []
                 old = (session, secrets.token_hex(16), now)
                 self.pending[address] = old
-            return [({"kind": "welcome", "build": self.build,
-                      "session": old[1], "peer": session}, address)]
+            return [(self.welcome(session,old[1]),address)]
         if self.role == "join" and kind == "welcome":
             if address != self.target or message.get("peer") != self.session:
                 return []
+            key=None
+            if self.password and message.get('password_required')is not True:
+                self.error_message='Host has no password. Clear the password field only if that is expected.';return []
+            if message.get('password_required')is True:
+                salt=message.get('password_salt')
+                if not isinstance(salt,str)or not NONCE.fullmatch(salt):return []
+                if not self.password:self.error_message='Password required. Enter it and join again.';return []
+                if salt not in self.password_cache:
+                    if len(self.password_cache)>=8:return []
+                    self.password_cache[salt]=admission.base_key(self.password,salt)
+                key=admission.session_key(self.password_cache[salt],self.session,session,self.build)
+                claimed=message.get('password_proof')
+                if not isinstance(claimed,str)or not hmac.compare_digest(claimed,admission.proof(key)):
+                    self.error_message='Incorrect password. Enter it and join again.';return []
             if self.address is None:
+                self.auth_key=key;self.error_message=''
                 self.address, self.remote_session = address, session
                 self.last_seen = now
             return []
@@ -237,6 +268,7 @@ class Peer:
                     or message.get("peer") != candidate[1]):
                 return []
             self.session = candidate[1]
+            self.auth_key=admission.session_key(self.password_base,session,self.session,self.build)if self.password_base else None
             self.address, self.remote_session = address, session
             self.pending.clear()
         if (address != self.address or session != self.remote_session
@@ -267,23 +299,25 @@ class Peer:
         self.connected = False
         self.probes={};self.rtt_ms=None;self.rtt_samples=[]
         self.pending.clear()
+        self.auth_key=None;self.error_message='';self.password_cache.clear()
         return True
 
 
 class Bridge:
     def __init__(self, role: str, code: str | None, build: str, runtime: Path,
-                 port: int = 7777, address: str | None = None, bind: str = "0.0.0.0"):
+                 port: int = 7777, address: str | None = None, bind: str = "0.0.0.0", *,password="",transport=None,target=None):
         if not 1 <= port <= 65535:
             raise ValueError("Port must be between 1 and 65535")
-        target = (socket.gethostbyname(address), port) if role == "join" and address else None
+        if transport is None:target = (socket.gethostbyname(address), port) if role == "join" and address else None
         if role == "join" and target is None:
             raise ValueError("Joining requires the host's IP or hostname")
-        self.peer = Peer(role, code, build, target)
+        self.peer = Peer(role, code, build, target,password)
         self.runtime = runtime
         runtime.mkdir(parents=True, exist_ok=True)
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socket = transport or socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         # No reuse: two hosts must not silently share a port.
-        try:self.socket.bind((bind, port if role == "host" else 0))
+        try:
+            if transport is None:self.socket.bind((bind, port if role == "host" else 0))
         except OSError:
             self.socket.close()
             raise
@@ -472,6 +506,7 @@ class Bridge:
                       "received_snapshots": self.peer.remote_pose_counter,
                       "rejected_packets": self.rejected, "send_errors": self.send_errors,
                       "last_send_error": self.last_send_error}
+            status['connection_error']=self.peer.error_message
             atomic_write(self.runtime / "status.json", json.dumps(status, indent=2))
             atomic_write(self.runtime / "bridge.heartbeat", str(time.time()) + "\n")
             atomic_write(self.runtime / "role.cfg",f"HSROLE1|{self.peer.role}|{int(self.peer.connected)}|{self.peer.session}|{time.time()}\n")

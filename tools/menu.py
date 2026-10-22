@@ -21,9 +21,11 @@ def lan_ipv4():
 
 
 class Menu:
-    def __init__(self,root:Path,runtime:Path,build:str,preferences:Path|None=None):
+    def __init__(self,root:Path,runtime:Path,build:str,preferences:Path|None=None,steam_autostart=False):
         self.root,self.runtime,self.build=root,runtime,build
+        runtime.mkdir(parents=True,exist_ok=True)
         self.bridge=None;self.server=None
+        self.steam=None;self.steam_updates=None;self.connection_transport='direct';self.tab='direct'
         self.updates=Updates(root,runtime)
         self.last_poll=self.last_state=self.last_check=-1e9
         self.last_command=""
@@ -39,16 +41,31 @@ class Menu:
         except (OSError,ValueError):pass
         atomic_write(runtime/"role.cfg","OFF\n")
         atomic_write(runtime/"match.request","OFF\n")
+        if steam_autostart:
+            try:self.steam_command('steam_open','friends','','','')
+            except (ValueError,OSError):pass  # Direct mode remains available offline.
     def save(self):atomic_write(self.preferences,json.dumps(self.settings,indent=2))
     def disconnect(self):
+        self.steam_updates=None
         if self.bridge:self.bridge.close();self.bridge=None
         if self.server:self.server.close();self.server=None
+        if self.steam:self.steam.leave()
         self.message="Offline — choose Host or Join"
         atomic_write(self.runtime/"match.request","OFF\n")
     def command(self,line:str):
         p=line.strip().split("|")
-        if len(p)!=6 or p[0]!="HSUI1" or p[1]==self.last_command:return
+        if not((len(p)==6 and p[0]=='HSUI1')or(len(p)==11 and p[0]=='HSUI2'))or p[1]==self.last_command:return
         action=p[2]
+        password='';name='';privacy='friends';target=''
+        if p[0]=='HSUI2':
+            from lobbies import unhex
+            if p[6]not in('direct','steam'):raise ValueError('Unknown connection tab.')
+            self.tab=p[6];privacy=p[7];target=''if p[10]=='-'else p[10]
+            if action in('host','join','steam_host','steam_join'):password=unhex(p[9],128)
+            if action=='steam_host':name=unhex(p[8],64)
+        if action.startswith('steam_'):
+            self.last_command=p[1]
+            self.steam_command(action,privacy,name,password,target);return
         port=self.settings["port"]
         if action in ("host","join","check_updates"):
             port=int(p[3])
@@ -60,7 +77,7 @@ class Menu:
         if action in ("host","join"):
             if action=="join" and not host:raise ValueError("Enter the host IP address")
             self.disconnect()
-            try:self.bridge=Bridge(action,None,self.build,self.runtime,port,host or None)
+            try:self.bridge=Bridge(action,None,self.build,self.runtime,port,host or None,password=password)
             except OSError as exc:
                 if action=="host" and (exc.errno in (errno.EADDRINUSE,10048) or getattr(exc,"winerror",None)==10048):
                     raise ValueError(f"Port {port} is already in use. Join that host, or choose a different port for a second host.") from None
@@ -70,6 +87,7 @@ class Menu:
                 except OSError as exc:self.updates.message="Update sharing unavailable: "+str(exc)
                 self.message=f"Hosting at {lan_ipv4()}:{port} — waiting for guest"
             else:self.message=f"Connecting to {host}:{port}"
+            self.connection_transport='direct'
             self.settings["port"]=port
             if action=="join":self.settings["host"]=host
             self.save()
@@ -87,6 +105,9 @@ class Menu:
         elif action=="auto_updates":
             self.settings["automatic_updates"]=p[5]=="1";self.save()
         elif action=="check_updates":
+            if self.bridge and self.connection_transport=='steam':
+                if not self.bridge.peer.connected:raise ValueError('Connect to the Steam host before checking for updates.')
+                self.steam_updates.request();return
             if not host:host=self.settings["host"]
             if not host:raise ValueError("Enter the host address to check for updates")
             self.updates.check(f"http://{host}:{port+1}")
@@ -96,15 +117,40 @@ class Menu:
                 self.message="Quit the game to apply the update and restart"
             else:self.message="Check for an update first"
         else:raise ValueError("Unknown multiplayer action")
+    def steam_command(self,action,privacy,name,password,target):
+        from lobbies import Lobbies,lobby_id,hextext
+        if self.steam is None:
+            try:self.steam=Lobbies(self)
+            except Exception as exc:
+                atomic_write(self.runtime/'steam.state',f'HSSTEAM1|{hextext(str(exc))}|-|-|-|0|{time.time()}\n')
+                raise
+        if action=='steam_open':self.steam.publish()
+        elif action=='steam_host':self.steam.start(privacy,name,password)
+        elif action=='steam_join':self.steam.join(target,password)
+        elif action=='steam_refresh':self.steam.browse()
+        elif action=='steam_friends':self.steam.load_friends()
+        elif action=='steam_invite':
+            self.steam.api.invite(lobby_id(target));self.steam.message='Steam invitation sent.'
+        else:raise ValueError('Unknown Steam action.')
     def step(self):
         now=time.monotonic()
+        if self.steam:
+            try:self.steam.tick()
+            except (ValueError,OSError)as exc:self.message=str(exc)
         if self.bridge:self.bridge.step()
+        if self.steam_updates:
+            try:self.steam_updates.tick()
+            except (ValueError,OSError)as exc:self.updates.message='Steam update failed: '+str(exc)
+        if self.bridge and isinstance(self.bridge.peer.error_message,str)and self.bridge.peer.error_message:
+            error=self.bridge.peer.error_message
+            if self.connection_transport=='steam':self.disconnect()
+            self.message=error
         if now-self.last_poll>=.05:
             self.last_poll=now
             path=self.runtime/"ui.command"
             try:
                 line=path.read_text(encoding="ascii")
-                if len(line)>1024:raise ValueError("Invalid menu command")
+                if len(line)>4096:raise ValueError("Invalid menu command")
                 if line.endswith("\n"):
                     self.command(line)
                     path.unlink(missing_ok=True)
@@ -113,7 +159,9 @@ class Menu:
         if (self.settings["automatic_updates"] and self.bridge and self.bridge.peer.role=="join"
                 and now-self.last_check>=60):
             self.last_check=now
-            self.updates.check(f"http://{self.settings['host']}:{self.settings['port']+1}")
+            if self.connection_transport=='steam':
+                if self.bridge.peer.connected:self.steam_updates.request()
+            else:self.updates.check(f"http://{self.settings['host']}:{self.settings['port']+1}")
         if now-self.last_state>=.5:
             self.last_state=now
             message=self.message
@@ -152,6 +200,7 @@ class Menu:
             atomic_write(self.runtime/"ui.state","|".join(clean(v) for v in values)+"\n")
     def close(self,game_closed=False):
         self.disconnect()
+        if self.steam:self.steam.close();self.steam=None
         if self.updates.busy:self.updates.thread.join(timeout=10)
         if game_closed and not self.updates.busy and self.updates.pending and (self.settings["automatic_updates"] or self.updates.apply_requested):
             self.restart=self.updates.apply()

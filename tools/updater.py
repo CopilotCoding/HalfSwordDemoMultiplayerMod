@@ -47,6 +47,14 @@ class Updates:
         self.apply_requested=False
     @property
     def busy(self):return self.thread is not None and self.thread.is_alive()
+    def stage(self,data,manifest):
+        if(len(data)>MAX_PACKAGE or len(data)!=manifest.get('size')
+                or hashlib.sha256(data).hexdigest()!=manifest.get('sha256')):
+            raise ValueError('Update checksum mismatch')
+        package_files(data)
+        destination=self.runtime/'updates/pending.zip';destination.parent.mkdir(parents=True,exist_ok=True)
+        destination.write_bytes(data);self.pending=destination;self.pending_hash=manifest['sha256']
+        self.message='Update ready - applies after the game closes'
     def check(self,base:str):
         if self.busy:return
         self.message="Checking for updates..."

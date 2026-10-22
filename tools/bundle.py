@@ -8,14 +8,14 @@ import zipfile
 MAX_PACKAGE = 8 * 1024 * 1024
 RETIRED = {"mod/HalfSwordMP/Scripts/host.lua", "mod/HalfSwordMP/Scripts/camera.lua",
            "mod/HalfSwordMP/Scripts/inputs.lua","mod/HalfSwordMP/Scripts/puppet.lua",
-           "mod/HalfSwordMP/Scripts/native_bodies.lua"}
+           "mod/HalfSwordMP/Scripts/native_bodies.lua", "tools/steam_api64.dll"}
 
 
 def allowed(path: str) -> bool:
     p=PurePosixPath(path)
     if p.is_absolute() or ".." in p.parts or "\\" in path or path!=p.as_posix():
         return False
-    if path in ("README.md","Start Multiplayer.cmd"):
+    if path in ("README.md","Start Multiplayer.cmd","THIRD_PARTY.md"):
         return True
     if len(p.parts)==2 and p.parts[0]=="tools" and p.suffix==".py":
         return bool(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*\.py",p.name)) and not (p.name.startswith(("loopback_","dev_")) or p.name=="game_test.py")
@@ -24,7 +24,7 @@ def allowed(path: str) -> bool:
 
 
 def package_bytes(root: Path) -> bytes:
-    paths=[root/"README.md",root/"Start Multiplayer.cmd"]
+    paths=[root/"README.md",root/"Start Multiplayer.cmd",root/"THIRD_PARTY.md"]
     paths+=list((root/"tools").glob("*.py"))+list((root/"mod").rglob("*.lua"))
     stream=io.BytesIO()
     with zipfile.ZipFile(stream,"w",zipfile.ZIP_DEFLATED) as z:
@@ -78,5 +78,7 @@ def package_files(data: bytes) -> dict[str,bytes]:
     required.update({'mod/HalfSwordMP/Scripts/held_pose.lua','mod/HalfSwordMP/Scripts/input_recovery.lua'})
     required.add('mod/HalfSwordMP/Scripts/audio_guard.lua')
     required.add('mod/HalfSwordMP/Scripts/voice.lua')
+    required.update({'tools/admission.py','tools/steam.py','tools/steam_runtime.py','tools/lobbies.py','tools/steam_updates.py',
+                     'THIRD_PARTY.md','mod/HalfSwordMP/Scripts/ui.lua'})
     if not required<=result.keys():raise ValueError("Incomplete update package")
     return result

@@ -38,7 +38,7 @@ def main():
   executable=args.game/'HalfSwordUE5/Binaries/Win64/HalfSwordUE5-Win64-Shipping.exe'
   build=json.loads((args.root/'runtime/build.json').read_text())['sha256']
   (runtime/'build.json').write_text(json.dumps({'sha256':build,'game':str(args.game)}))
-  menu=Menu(args.root,runtime,build,preferences=args.root/'runtime/preferences.json')
+  menu=Menu(args.root,runtime,build,preferences=args.root/'runtime/preferences.json',steam_autostart=True)
   (runtime/'companion.ready').write_text(str(args.pid))
   (runtime/'companion.pid').write_text(str(os.getpid()))
   while k.WaitForSingleObject(handle,0)==258:

@@ -33,7 +33,7 @@ def main():
         build = json.loads((runtime / "build.json").read_text())["sha256"]
         instance=new_instance(ROOT)
         (instance/'build.json').write_text(json.dumps({'sha256':build,'game':str(game_path)}))
-        companion=Menu(ROOT,instance,build,preferences=runtime/'preferences.json')
+        companion=Menu(ROOT,instance,build,preferences=runtime/'preferences.json',steam_autostart=True)
         exe = game_path / "HalfSwordUE5/Binaries/Win64/HalfSwordUE5-Win64-Shipping.exe"
         environment=os.environ.copy();environment['HALFSWORDMP_RUNTIME']=instance.as_posix()
         game = subprocess.Popen([str(exe), "-windowed", "-ResX=1280", "-ResY=720"], cwd=exe.parent,env=environment)
