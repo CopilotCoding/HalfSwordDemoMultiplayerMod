@@ -1,6 +1,7 @@
 -- Relay native injury once to its owner, without replaying collision forces.
 local Damage={}
-local paths=require('paths')
+local options=...
+local paths=type(options)=='table'and options or require('paths')
 local Math=dofile(paths.scripts..'/rig_math.lua')
 local Sever=dofile(paths.scripts..'/native_sever.lua')
 local own,remote,owner,target,identify,resolve,bone_frame,original_invulnerable,epoch
@@ -20,14 +21,28 @@ local function packed(t)local a,q,s=t.Translation,t.Rotation,t.Scale3D
 local function clear_file()local f=io.open(paths.runtime..'/local.damage','w');if f then f:write('OFF\n');f:close()end end
 function Damage.stop()
  Sever.reset()
- if valid(own)and original_invulnerable~=nil then own.Invulnerable=original_invulnerable end
+ local record=_G.HSMPDamageReceivers and _G.HSMPDamageReceivers[Damage]
+ local restore=record and record.original
+ if restore==nil then restore=original_invulnerable end
+ local protected=false
+ for key,receiver in pairs(_G.HSMPDamageReceivers or{})do
+  if key~=Damage and same(receiver.own,own)then
+   protected=true
+   if restore==false then receiver.original=false end
+  end
+ end
+ if valid(own)and restore~=nil then own.Invulnerable=protected or restore end
  for _,b in ipairs(boxes)do if valid(b.component)then b.component:K2_DestroyComponent(own)end end
  own,remote,owner,target,identify,resolve,bone_frame,original_invulnerable,epoch=nil,nil,nil,nil,nil,nil,nil,nil,nil
  events,sequence,received,boxes={},0,{},{}
  replay_queue,last_read_text,last_published_text={},nil,nil
  next_publish,published_sequence=0,-1
  arm_after=0
- _G.HSMPComplexDispatch=nil;_G.HSMPDamageDispatch=nil;_G.HSMPSeverDispatch=nil;clear_file()
+ if _G.HSMPDamageReceivers then _G.HSMPDamageReceivers[Damage]=nil end
+ if not _G.HSMPDamageReceivers or next(_G.HSMPDamageReceivers)==nil then
+  _G.HSMPComplexDispatch=nil;_G.HSMPDamageDispatch=nil;_G.HSMPSeverDispatch=nil
+ end
+ clear_file()
 end
 function Damage.protect(pawn)
  if not valid(pawn)then return end
@@ -48,7 +63,7 @@ function Damage.configure(pawn,other,owner_id,target_id,identifier,resolver,fram
  -- deduplicated injury event alone bypasses this flag.
  own.Invulnerable=true
  if valid(remote)then remote.Invulnerable=os.clock()<arm_after end
- _G.HSMPDamageDispatch=function(context,...)
+ local damage_dispatch=function(context,...)
   if os.clock()<arm_after or not same(context,remote)or not identify then return end
   local a={...};if #a<16 then return end
   local source=a[13]:get();local source_id=valid(source)and identify(source)
@@ -75,7 +90,7 @@ function Damage.configure(pawn,other,owner_id,target_id,identifier,resolver,fram
    end
   end)}
  end
- _G.HSMPSeverDispatch=function(context,...)
+ local sever_dispatch=function(context,...)
   if os.clock()<arm_after or not same(context,remote)or not identify or not bone_frame then return end
   local e=Sever.capture(context,{...},identify,bone_frame,target)
   if e then sequence=sequence+1;events[#events+1]={sever=e,seq=sequence,time=os.clock()};if #events>32 then table.remove(events,1)end end
@@ -86,6 +101,17 @@ function Damage.configure(pawn,other,owner_id,target_id,identifier,resolver,fram
    if _G.HSMPSeverDispatch then local ok,err=pcall(_G.HSMPSeverDispatch,context:get(),...)
     if not ok then print('[HalfSwordMP] Sever capture: '..tostring(err)..'\n')end end
   end)}
+ end
+ _G.HSMPDamageReceivers=_G.HSMPDamageReceivers or{}
+ local previous=_G.HSMPDamageReceivers[Damage]
+ local original=original_invulnerable
+ if previous and previous.original~=nil then original=previous.original end
+ _G.HSMPDamageReceivers[Damage]={damage=damage_dispatch,sever=sever_dispatch,own=own,original=original}
+ _G.HSMPDamageDispatch=function(context,...)
+  for _,receiver in pairs(_G.HSMPDamageReceivers or{})do receiver.damage(context,...)end
+ end
+ _G.HSMPSeverDispatch=function(context,...)
+  for _,receiver in pairs(_G.HSMPDamageReceivers or{})do receiver.sever(context,...)end
  end
 end
 local function publish()

@@ -1,7 +1,8 @@
 """Steam lobby lifecycle and UI data, separate from native combat."""
 import ctypes as C
 import secrets,time
-from network import Bridge,atomic_write
+from network import atomic_write
+from party import Bridge
 from steam import Steam,SteamSocket,SteamError
 from version import VERSION,PROTOCOL
 
@@ -40,13 +41,13 @@ class Lobbies:
     if lobby:self.api.leave()
     return
    if error:self.message=error;self.menu.message=error;return
-   for key,value in {'halfswordmp':'1','protocol':PROTOCOL,'version':VERSION,'build':self.menu.build,
+   for key,value in {'halfswordmp':'1','protocol':PROTOCOL,'version':VERSION,'build':self.menu.build,'limit':self.menu.settings['max_players'],
     'name':self.name,'password':int(bool(password)),'channel':self.channel,'host':str(self.api.id)}.items():
     if not self.api.set_data(key,value):self.api.leave();self.message='Steam could not publish lobby settings. Try again.';self.menu.message=self.message;return
    self.host=self.api.id;self.role='host'
    self.connect(password)
    self.message=f'{self.privacy.title()} Steam lobby: {self.name}';self.menu.message=self.message
-  try:self.api.create(privacy,done)
+  try:self.api.create(privacy,done,self.menu.settings['max_players'])
   except Exception:self.operation=False;raise
  def join(self,value,password):
   target=lobby_id(value or self.invitation)
@@ -76,7 +77,7 @@ class Lobbies:
  def connect(self,password):
   transport=SteamSocket(self.api,self.channel,self.role)
   try:self.menu.bridge=Bridge(self.role,None,self.menu.build,self.menu.runtime,password=password,
-   transport=transport,target=(self.host,self.channel)if self.role=='join'else None)
+   transport=transport,target=(self.host,self.channel)if self.role=='join'else None,max_players=self.menu.settings['max_players'])
   except Exception:transport.close();self.api.leave();raise
   self.menu.connection_transport='steam'
   from steam_updates import SteamTransfer
@@ -101,7 +102,7 @@ class Lobbies:
     if not self.api.logged_on()or self.api.owner()!=self.host:
      self.menu.disconnect();self.message='Steam host left or Steam went offline.';self.menu.message=self.message
     elif self.role=='host':
-     joinable=not(self.menu.bridge and self.menu.bridge.peer.connected)
+     joinable=not self.menu.bridge or self.menu.bridge.population<self.menu.bridge.max_players
      if joinable!=self.last_joinable:
       self.api.match('SetLobbyJoinable',C.c_bool,[C.c_uint64,C.c_bool],self.api.lobby,joinable)
       self.last_joinable=joinable
@@ -112,7 +113,7 @@ class Lobbies:
    self.role or'-',self.invitation or'-',int(self.operation),time.time()]))+'\n')
   lines=['HSLOBBIES1']
   for row in self.rows:
-   lines.append('|'.join(map(str,[row['id'],hextext(row['name']),hextext(row['host']),row['players'],int(row['locked']),int(row['compatible']),row['version']or'-'])))
+   lines.append('|'.join(map(str,[row['id'],hextext(row['name']),hextext(row['host']),row['players'],int(row['locked']),int(row['compatible']),row['version']or'-',row.get('limit',4)])))
   atomic_write(m.runtime/'steam.lobbies','\n'.join(lines)+'\n')
   atomic_write(m.runtime/'steam.friends','HSFRIENDS1\n'+''.join('|'.join([r['id'],hextext(r['name']),r['lobby']or'-'])+'\n'for r in self.friends))
  def close(self):self.api.close()

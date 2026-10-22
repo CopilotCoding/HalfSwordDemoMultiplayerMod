@@ -7,7 +7,7 @@ local receivers={}
 local last_auto,settings_loaded=false,false
 local previous_cursor
 local companion_time=0
-local direct_panel,steam_panel,password,lobby_name,privacy_button,steam_status,page_label
+local direct_panel,steam_panel,password,lobby_name,privacy_button,steam_status,page_label,max_players
 local tab,privacy,list_mode,page='direct','friends','public',1
 local list_buttons,list_targets={},{}
 local steam_role,last_invite='',nil
@@ -22,6 +22,7 @@ local function intact_widgets()
     return valid(widget)and valid(canvas)and valid(panel)and valid(status)and valid(address)
         and valid(port)and valid(automatic)and valid(restart)and valid(password)and valid(lobby_name)
         and valid(direct_panel)and valid(steam_panel)and valid(privacy_button)and valid(steam_status)and valid(page_label)
+        and valid(max_players)
 end
 local function text(s) return StaticFindObject("/Script/Engine.Default__KismetTextLibrary"):Conv_StringToText(s) end
 local function string_value(t) return t:ToString() end
@@ -49,8 +50,9 @@ local function request(action,value,target)
     local f=io.open(paths.runtime.."/ui.command","w")
     local secret=valid(password)and hex(string_value(password:GetText()))or''
     local name=valid(lobby_name)and hex(string_value(lobby_name:GetText()))or''
-    if f then f:write("HSUI2|",os.time(),"-",sequence,"|",action,"|",number,"|",host=="" and "-" or host,"|",value and "1" or "0",
-        '|',tab,'|',privacy,'|',name==''and'-'or name,'|',secret==''and'-'or secret,'|',target or'-',"\n");f:close() end
+    local limit=tonumber(string_value(max_players:GetText()))or 4
+    if f then f:write("HSUI3|",os.time(),"-",sequence,"|",action,"|",number,"|",host=="" and "-" or host,"|",value and "1" or "0",
+        '|',tab,'|',privacy,'|',name==''and'-'or name,'|',secret==''and'-'or secret,'|',target or'-','|',limit,"\n");f:close() end
     return f~=nil
 end
 function UI.is_open() return open and valid(widget) end
@@ -178,9 +180,11 @@ local function create()
     restart:SetVisibility(1);restart:SetIsEnabled(false)
     button(content,'Steam',24,130,282,function()switch_tab('steam')end)
     button(content,'Direct IP / Port Forward',326,130,282,function()switch_tab('direct')end)
-    place(content,label('Optional password (host sets it; guest enters the same)',15),24,276,590,28)
+    place(content,label('Optional password',15),24,276,390,28)
+    place(content,label('Host limit (2-16)',15),440,276,170,28)
     -- One password field is shared by both tabs and never saved in preferences.
-    password=text_box(content,24,304,590,42,'Leave blank for no password');password:SetIsPassword(true)
+    password=text_box(content,24,304,390,42,'Leave blank for no password');password:SetIsPassword(true)
+    max_players=text_box(content,440,304,170,42);max_players:SetText(text('4'))
     place(direct_panel,label('Host: forward this UDP port for Internet play.\nJoin: enter the host address and password if set.\nDirect hosts are never publicly listed.',17),24,280,584,110)
     place(steam_panel,label('Lobby name',16),24,0,282,26)
     lobby_name=text_box(steam_panel,24,26,282,40,"Your match's name")
@@ -252,7 +256,7 @@ function UI.tick()
                 if enabled~=last_auto then automatic:SetIsChecked(enabled);last_auto=enabled end
                 if not settings_loaded then
                     if string_value(address:GetText())=="" then address:SetText(text(values[4]=="-" and "" or values[4])) end
-                    port:SetText(text(values[5] or "7777"));settings_loaded=true
+                    port:SetText(text(values[5] or "7777"));max_players:SetText(text(values[11]or'4'));settings_loaded=true
                 end
             else
                 restart:SetVisibility(1);restart:SetIsEnabled(false)
@@ -279,7 +283,7 @@ function UI.tick()
                     local v=split(line)
                     if list_mode=='public'and #v==7 then
                         rows[#rows+1]={id=v[1],action='steam_join',enabled=v[6]=='1',
-                            label=clip(unhex(v[2]),38)..'  '..v[4]..'/2'..(v[5]=='1'and' [password]'or'')..(v[6]~='1'and' [update needed]'or'')}
+                            label=clip(unhex(v[2]),38)..'  '..v[4]..'/'..(v[8]or'4')..(v[5]=='1'and' [password]'or'')..(v[6]~='1'and' [update needed]'or'')}
                     elseif list_mode=='friends'and #v==3 then
                         local invite=steam_role=='host'or steam_role=='join'
                         rows[#rows+1]={id=invite and v[1]or v[3],action=invite and'steam_invite'or'steam_join',

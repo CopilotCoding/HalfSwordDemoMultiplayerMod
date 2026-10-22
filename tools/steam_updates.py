@@ -18,8 +18,10 @@ class SteamTransfer:
   bridge=self.menu.bridge
   if not bridge or not bridge.peer.connected or not bridge.peer.address:return
   peer=bridge.peer.address[0];now=time.monotonic()
+  allowed=({address[0]for address in bridge.peer_addresses()}if hasattr(bridge,'peer_addresses')else{peer})
   for data,user in self.api.receive(self.channel,8):
-   if user!=peer:continue
+   if user not in allowed:continue
+   peer=user
    try:
     if data.startswith(b'HSUM')and len(data)<=2048:
      value=json.loads(data[4:])
@@ -33,7 +35,7 @@ class SteamTransfer:
       manifest={'token':token,'format':1,'version':VERSION,'protocol':PROTOCOL,'size':len(payload),
        'sha256':hashlib.sha256(payload).hexdigest(),'chunks':count}
       self.api.send(b'HSUM'+json.dumps(manifest).encode(),peer,self.channel,True)
-      self.outgoing=(token,payload,0);self.next_send=now+.1
+      self.outgoing=(token,payload,0,peer);self.next_send=now+.1
      elif bridge.peer.role=='join'and self.token and value.get('token')==self.token:
       size=value.get('size');count=value.get('chunks')
       if(type(size)is not int or not 0<size<=MAX_PACKAGE or type(count)is not int
@@ -52,11 +54,11 @@ class SteamTransfer:
    except(ValueError,UnicodeError,TypeError,RecursionError)as exc:
     self.token=None;self.chunks=[];self.manifest=None;self.menu.updates.message='Steam update failed: '+str(exc)
   if self.outgoing and now>=self.next_send:
-   token,payload,index=self.outgoing
+   token,payload,index,peer=self.outgoing
    for _ in range(2):
     chunk=payload[index*16384:(index+1)*16384]
     if not chunk:self.outgoing=None;self.next_send=now+2;break
     self.api.send(b'HSUC'+bytes.fromhex(token)+struct.pack('<I',index)+chunk,peer,self.channel,True);index+=1
-   if self.outgoing:self.outgoing=(token,payload,index);self.next_send=now+.1
+   if self.outgoing:self.outgoing=(token,payload,index,peer);self.next_send=now+.1
   if self.token and now>self.deadline:
    self.token=None;self.chunks=[];self.manifest=None;self.menu.updates.message='Steam update timed out. Check again.'

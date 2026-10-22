@@ -147,8 +147,12 @@ function Dropped.request(pawn,renderer,hand)
  pending[token]={owner=renderer.owner(),id=best.id,hand=hand}
  return true
 end
-function Dropped.tick(pawn,renderer)
- if not renderer.drops or not renderer.owner()or not _G.HSMPAvatar then return end
+function Dropped.tick(pawn,renderer)return Dropped.tick_many(pawn,{renderer})end
+function Dropped.tick_many(pawn,renderers)
+ if not _G.HSMPAvatar then return end
+ local ready={}
+ for _,renderer in ipairs(renderers)do if renderer.drops and renderer.owner()then ready[#ready+1]=renderer end end
+ if #ready==0 then return end
  local clock=os.clock();if clock<tick_after then return end;tick_after=clock+.05
  local own=_G.HSMPAvatar.owner(pawn);local state=Dropped.update(pawn)
  _G.HSMPDropInput=function(context,hand)
@@ -169,11 +173,20 @@ function Dropped.tick(pawn,renderer)
   end
  end
  if pawn.Health<=0 or pawn.DED then queued={};return end
- for hand in pairs(queued)do Dropped.request(pawn,renderer,hand)end;queued={}
+ for hand in pairs(queued)do
+  table.sort(ready,function(a,b)
+   local root=pawn:K2_GetActorLocation()
+   local function nearest(renderer)local n=math.huge;for _,item in ipairs(renderer.drops()or{})do if item.grant==0 then n=math.min(n,distance(root,item.transform))end end;return n end
+   return nearest(a)<nearest(b)
+  end)
+  for _,renderer in ipairs(ready)do if Dropped.request(pawn,renderer,hand)then break end end
+ end
+ queued={}
+ for _,renderer in ipairs(ready)do
  local items,requests=renderer.drops()
  local present={};for _,item in ipairs(items or{})do present[item.id]=true end
  for token,request in pairs(pending)do
-  if request.owner~=renderer.owner()or not present[request.id]then pending[token]=nil end
+  if request.owner==renderer.owner()and not present[request.id]then pending[token]=nil end
  end
  local root=renderer.root()
  for _,request in ipairs(requests or{})do
@@ -210,5 +223,6 @@ function Dropped.tick(pawn,renderer)
    elseif request.error~=tostring(err)then request.error=tostring(err);print('[HalfSwordMP] Pickup: '..tostring(err)..'\n')end
   end
  end
+ end -- each remote owner
 end
 return Dropped

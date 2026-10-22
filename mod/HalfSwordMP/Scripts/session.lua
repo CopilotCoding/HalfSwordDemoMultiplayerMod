@@ -7,6 +7,8 @@ local Fighter=dofile(paths.scripts.."/fighter.lua")
 local Damage=dofile(paths.scripts.."/damage.lua")
 local Injury=dofile(paths.scripts..'/injury.lua')
 local Clothing=dofile(paths.scripts..'/clothing.lua')
+local Roster=dofile(paths.scripts..'/roster.lua')
+_G.HSMPParty=Roster
 local Pause=dofile(paths.scripts..'/pause.lua')or{}
 local Recovery=dofile(paths.scripts..'/input_recovery.lua')or{}
 _G.HSMPPause=Pause
@@ -25,6 +27,7 @@ local injury_state,injury_attacker
 local function valid(o) return o~=nil and o:IsValid() end
 local function same(a,b) return valid(a) and valid(b) and a:GetFullName()==b:GetFullName() end
 function Session.stop()
+    Roster.reset()
     if Recovery.reset then Recovery.reset()end
     if _G.HSMPDropped and _G.HSMPDropped.reset then _G.HSMPDropped.reset()end
     if Pause.reset then Pause.reset()end
@@ -54,9 +57,16 @@ function Session.adjust_guest_spawn(class,world,transform)
             and a:GetClass():GetFName():ToString()=='Arena_Cutting_Map_C'then
             local first,second=a['Spawn Point 1'],a['Spawn Point 2']
             local v=transform.Translation
-            v.X,v.Y=first.X+second.X-v.X,first.Y+second.Y-v.Y
-            local q=transform.Rotation;local x,y,z,w=q.X,q.Y,q.Z,q.W
-            q.X,q.Y,q.Z,q.W=-y,x,w,-z
+            local x,y,yaw=Roster.spawn(first,second)
+            if x then
+                v.X,v.Y=x,y
+                local half=math.rad(yaw)/2;local q=transform.Rotation
+                q.X,q.Y,q.Z,q.W=0,0,math.sin(half),math.cos(half)
+            else
+                v.X,v.Y=first.X+second.X-v.X,first.Y+second.Y-v.Y
+                local q=transform.Rotation;local x,y,z,w=q.X,q.Y,q.Z,q.W
+                q.X,q.Y,q.Z,q.W=-y,x,w,-z
+            end
             return
         end
     end
@@ -108,6 +118,7 @@ function Session.hide_waiting()
     if role~="off" and Match.playable() then Waiting.hide() end
 end
 function Session.tick(pawn)
+    Roster.read()
     tick=tick+1
     local f=io.open(paths.runtime.."/role.cfg","r")
     local p={}
@@ -139,6 +150,7 @@ function Session.tick(pawn)
     Round.install_hooks()
     if not Match.poll(world,pawn) then
         if local_pawn or local_world then
+            Roster.reset()
             if _G.HSMPDropped and _G.HSMPDropped.reset then _G.HSMPDropped.reset()end
             Fighter.destroy();Waiting.release();Round.release();Damage.stop()
             local_pawn,local_world,retiring_pawn,frame=nil,nil,nil,nil
@@ -149,10 +161,12 @@ function Session.tick(pawn)
     end
     Match.prepare(world)
     if local_world and local_world~=world:GetFullName() then
+        Roster.reset()
         Fighter.destroy();Waiting.release();Round.release();Damage.stop();local_pawn=nil;retiring_pawn=nil;frame=nil
     end
     local_world=world:GetFullName()
     if Round.poll(world,function()
+        Roster.reset()
         if _G.HSMPDropped and _G.HSMPDropped.reset then _G.HSMPDropped.reset()end
         previous_remote_owner=Fighter.owner()
         Clothing.reset()
@@ -167,6 +181,7 @@ function Session.tick(pawn)
         retiring_pawn=nil
     end
     if valid(pawn) and pawn:GetClass():GetFName():ToString()=="Willie_BP_C" and not same(pawn,local_pawn) then
+        Roster.reset()
         Fighter.destroy();Waiting.release();Damage.stop();
         injury_state,injury_attacker=nil,nil
         local_pawn=pawn
@@ -186,6 +201,7 @@ function Session.tick(pawn)
         end
     end
     if not valid(local_pawn) then return role end
+    local_pawn['Team Int']=Roster.slot()-1
     if Damage.protect then Damage.protect(local_pawn)end
     -- Quarantine native AI and its old weapons during the loadout wait, not
     -- only after the new fighter has already become vulnerable.
@@ -212,6 +228,7 @@ function Session.tick(pawn)
             _G.HSMPAvatar.owner(local_pawn),frame[1],frame[2],frame[3],frame[4],os.time()));f:close() end
     end
     Round.hold(world)
+    if Roster.eliminated()then Round.surrender(local_pawn)end
     Waiting.hold(local_pawn)
     return role
 end
@@ -221,7 +238,7 @@ function Session.after_render(renderer)
     if connected and valid(mesh) then
         if previous_remote_owner and renderer.owner()==previous_remote_owner then return end
         previous_remote_owner=nil
-        Fighter.update(local_pawn,renderer,Waiting)
+        Fighter.update(local_pawn,renderer,Waiting,Roster.primary()>0 and Roster.primary()-1 or nil)
         Fighter.appearance(renderer)
         local avatar=_G.HSMPAvatar
         if avatar then
@@ -229,10 +246,15 @@ function Session.after_render(renderer)
             Damage.tick()
         end
     else Fighter.destroy();Damage.stop() end
+    Roster.update(local_pawn,renderer,Waiting,Round)
 end
 function Session.animate(renderer)
     if role~="off" and Match.playable() and valid(local_pawn) then
-        if _G.HSMPDropped then _G.HSMPDropped.tick(local_pawn,renderer)end
+        if _G.HSMPDropped then
+            if _G.HSMPDropped.tick_many then _G.HSMPDropped.tick_many(local_pawn,Roster.renderers(renderer))
+            else _G.HSMPDropped.tick(local_pawn,renderer)end
+        end
+        Roster.animate(local_pawn,Clothing)
         Clothing.update(local_pawn);Clothing.update(Fighter.pawn(),true)
         Fighter.controls(local_pawn)
         Fighter.render(renderer)
@@ -254,5 +276,6 @@ function Session.inspect(f)
             "\nlocal_tick=",tostring(local_pawn:IsActorTickEnabled()),"\nlocal_physics=",tostring(local_pawn.Mesh:IsSimulatingPhysics(FName("None"))),"\n")
     end
     Round.inspect(f);Fighter.inspect(f);Damage.inspect(f)
+    Roster.inspect(f)
 end
 return Session

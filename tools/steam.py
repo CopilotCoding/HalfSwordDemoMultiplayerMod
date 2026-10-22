@@ -124,14 +124,15 @@ class Steam:
    self.fn('SteamAPI_ISteamFriends_ClearRichPresence',None,P)(self.friends)
  def presence(self):
   self.fn('SteamAPI_ISteamFriends_SetRichPresence',B,P,S,S)(self.friends,b'connect',f'+connect_lobby {self.lobby}'.encode())
- def create(self,privacy,callback):
+ def create(self,privacy,callback,max_players=4):
   types={'invite':0,'friends':1,'public':2}
   if privacy not in types:raise SteamError('Choose friends, invite-only or public.')
   def done(raw):
    if not raw or len(raw)<16 or struct.unpack_from('<i',raw)[0]!=1:
     callback(None,'Steam could not create a lobby'+(' (result '+str(struct.unpack_from('<i',raw)[0])+')'if raw else' (request timed out)'));return
    self.lobby=struct.unpack_from('<Q',raw,8)[0];self.presence();callback(self.lobby,None)
-  self.call(self.match('CreateLobby',Q,[I,I],types[privacy],2),513,done)
+  from party import player_limit
+  self.call(self.match('CreateLobby',Q,[I,I],types[privacy],player_limit(max_players)),513,done)
  def join(self,lobby,callback):
   def done(raw):
    if not raw or len(raw)<20 or struct.unpack_from('<I',raw,16)[0]!=1:
@@ -152,6 +153,7 @@ class Steam:
   host=self.owner(lobby)
   return {'id':str(lobby),'name':self.metadata(lobby,'name')or'HalfSwordMP',
    'host':self.persona(host),'players':self.match('GetNumLobbyMembers',I,[Q],lobby),
+   'limit':self.match('GetLobbyMemberLimit',I,[Q],lobby),
    'locked':self.metadata(lobby,'password')=='1','compatible':self.metadata(lobby,'protocol')==str(PROTOCOL),
    'version':self.metadata(lobby,'version')}
  def friends_list(self):

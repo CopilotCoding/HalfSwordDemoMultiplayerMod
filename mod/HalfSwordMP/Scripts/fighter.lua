@@ -69,6 +69,7 @@ local function acquire(local_pawn,waiting,root,owner)
     if not valid(pending_pawn)or pending_pawn:GetFullName()~=pending_identity then
         pending_pawn=waiting.candidate and waiting.candidate(local_pawn,true)or nil
         if not valid(pending_pawn)then pending_pawn=waiting.spawn_at(local_pawn,root)end
+        if valid(pending_pawn)and waiting.reserve then waiting.reserve(pending_pawn)end
         pending_owner=owner;pending_identity=valid(pending_pawn)and pending_pawn:GetFullName()or nil;return
     end
     if not waiting.ready(pending_pawn) then return end
@@ -96,12 +97,13 @@ function Fighter.controls(local_pawn)
     -- The native player already consumes its own input. Re-hooking every axis
     -- and writing an unused 30 Hz input stream only adds work on slower PCs.
 end
-function Fighter.update(local_pawn,renderer,waiting)
+function Fighter.update(local_pawn,renderer,waiting,team)
     local root=renderer.root();local value,rows=renderer.equipment()
     if not root or not value or not value.present then return end
     if lease and (not live(lease)or not valid(lease.pawn.Mesh)or lease.owner~=renderer.owner())then Fighter.destroy()end
     local p=lease and lease.pawn or acquire(local_pawn,waiting,root,renderer.owner())
     if not valid(p) then return end
+    if team~=nil then p['Team Int']=team end
     if lease.replica and(not valid(lease.replica.control)or(lease.replica.control_name and lease.replica.control:GetFullName()~=lease.replica.control_name))then lease.replica=nil end
     if not lease.equipment or lease.equipment.signature~=value.signature then
         if lease.equipment_retry_at and now(local_pawn)<lease.equipment_retry_at then

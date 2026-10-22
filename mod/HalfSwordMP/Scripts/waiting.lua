@@ -167,6 +167,7 @@ function Waiting.equipment(pawn,actors)
 end
 function Waiting.ensure(pawn)
     if Waiting.candidate(pawn) or valid(spawned) then return end
+    for _,s in pairs(saved)do if live(s)and s.fighter and(s.dynamic or s.claimed)then return end end
     -- Training mode can contain a prop and no Willie at all. Spawn the game's
     -- native fighter class once; its own construction creates its physics.
     local position
@@ -195,6 +196,10 @@ end
 function Waiting.ready(a)
     local s=valid(a) and saved[a:GetFullName()]
     return s and not s.ready_at and valid(a.Controller)
+end
+function Waiting.reserve(a)
+    local s=valid(a)and saved[a:GetFullName()]
+    if s then s.claimed=true end
 end
 function Waiting.refreeze(a)
     if valid(a) and saved[a:GetFullName()] then
@@ -226,7 +231,8 @@ function Waiting.candidate(pawn,ready_only)
     for _,p in ipairs(FindAllOf("Willie_BP_C") or {}) do
         if valid(p) and p:GetClass():GetFName():ToString()=="Willie_BP_C" and p:GetFullName()~=pawn:GetFullName()
             and p:GetWorld():GetFullName()==pawn:GetWorld():GetFullName() and p.Health>=99 and not p.DED and not p.Headless and not p["Give Up"]
-            and (not saved[p:GetFullName()] or saved[p:GetFullName()].usable)
+            and (not saved[p:GetFullName()] or saved[p:GetFullName()].usable
+                and not saved[p:GetFullName()].active and not saved[p:GetFullName()].claimed)
             and valid(p.Controller) and p.Controller:IsA("/Script/AIModule.AIController")
             and (not ready_only or saved[p:GetFullName()] and not saved[p:GetFullName()].ready_at) then return p end
     end

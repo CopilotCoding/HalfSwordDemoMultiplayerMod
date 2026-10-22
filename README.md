@@ -1,16 +1,16 @@
 # HalfSwordMP
 
-**Experimental multiplayer for Half Sword Demo · 2 players · Version 0.11.1 · Protocol 22**
+**Experimental multiplayer for Half Sword Demo · 4 players by default · Version 0.12.0 · Protocol 23**
 
 ## About the mod
 
-HalfSwordMP turns the demo's arena into a two-player fight. Choose your fighter
-and equipment, host a Steam lobby or a Direct IP match, and have a friend join.
+HalfSwordMP turns the demo's arena into a multiplayer free-for-all. Choose your fighter
+and equipment, host a Steam lobby or a Direct IP match, and have friends join.
 Use the game's normal controls and combat, then start another round
 together. No room code or preliminary single-player fight is needed.
 
-Each PC controls its own native fighter. A native opponent represents the other
-player, following their transmitted body and weapon poses. The game handles
+Each PC controls its own native fighter. Native opponents represent the other
+players, following their transmitted body and weapon poses. The game handles
 combat contact; the mod relays injury and severing events to the injured
 player's PC. The host coordinates round resets. UE4SS runs the Lua mod inside
 the game, and a Python companion handles networking and updates.
@@ -20,9 +20,14 @@ wounds and dismemberment, enemy weapon pickup, shared character voice sounds, an
 with Steam friends/invites, public Steam lobbies, optional passwords, restart
 controls, measured network delay and optional host updates.
 
+Free Mode character tiers, including Master and Baron, are available without the
+progression lock. Master is second from the top; click it again for another
+native loadout. The top Baron button uses his fixed boss loadout; this unlock does not add new Baron variants. Gauntlet
+progression is unchanged.
+
 ## Install
 
-Both players need **matching Half Sword Demo installations**, the same mod
+All players need **matching Half Sword Demo installations**, the same mod
 release, and **Python 3.10 or newer** available as `python`.
 Steam mode additionally needs **64-bit Python** and Steam signed in and online.
 The launcher automatically finds a compatible Steam runtime locally or downloads
@@ -34,10 +39,10 @@ this ZIP or host update packages. First-time setup may need Internet access.
 2. Extract the ZIP and open its `HalfSwordMP` folder.
 3. Run **Start Multiplayer.cmd**. It finds the usual Steam location or asks for
    your demo folder, installs the mod, and opens the game.
-4. Repeat on the other PC.
+4. Repeat on each PC.
 
-**Upgrading from 0.10.x or 0.11.0:** extract this ZIP and run its launcher on both
-PCs. Earlier package validators do not support the new runtime layout.
+**Upgrading:** install this ZIP on every PC. Protocol 23 is incompatible with
+earlier releases, so update all players before joining.
 
 After installation, you can launch normally through **Steam**. A hidden
 companion starts automatically and exits with that game window. Python must
@@ -57,16 +62,18 @@ Connection preferences stay on your PC.
 1. Select your fighter and loadout in the normal game menu.
 2. Open **Multiplayer / F5 → Steam**. Enter a lobby name if wanted.
 3. Click the visibility button to choose **Friends only**, **Invite only** or
-   **Public**. Set an optional password, then click **Create lobby**.
+   **Public**. Set the host player limit (default **4**, range **2–16**) and an
+   optional password, then click **Create lobby**.
 4. Choose **Friends**, then click a friend to send a Steam invitation. The guest
    accepts the invitation and uses **Accept invite** in F5 if prompted. Enter the
    password first if the host set one. Without an active lobby, the Friends list
    lets you join friends who have a lobby.
 5. Alternatively, choose **Public lobbies / Refresh** and click a listed match.
-6. Choose **Enter multiplayer match** on both PCs and close F5.
+6. Choose **Enter multiplayer match** on each PC and close F5.
 
 Steam handles P2P/relay connections without manual port forwarding. Lobbies hold
-two players. Invite-only and friends-only lobbies stay out of the public list;
+four players by default, with a host-selected limit of 2–16. Invite-only and
+friends-only lobbies stay out of the public list;
 the list shows only this mod's Steam lobbies. Hosts remain responsible for the
 match; leaving ends the session rather than migrating gameplay to another host.
 
@@ -74,9 +81,10 @@ match; leaving ends the session rather than migrating gameplay to another host.
 
 1. Select your fighter and loadout in the game's main menu.
 2. Open **Multiplayer / F5 → Direct IP / Port Forward**. Set an optional password
-   and choose **Host** on one PC; its IP field can stay blank.
-3. On the other PC, enter the host's address, matching port and password, then **Join**.
-4. Choose **Enter multiplayer match** on both PCs. Close F5 and fight.
+   and a host player limit (default **4**, range **2–16**), then choose **Host**
+   on one PC; its IP field can stay blank.
+3. On each other PC, enter the host's address, matching port and password, then **Join**.
+4. Choose **Enter multiplayer match** on each PC. Close F5 and fight.
 
 Direct IP does not require Steam networking and never advertises a public listing.
 Passwords are not saved in preferences or published in lobby metadata. A password
@@ -89,12 +97,19 @@ the guest and authenticate the resulting gameplay session.
 | Hold G | Fill the native give-up meter; release to cancel. Available while healthy or downed. |
 | E / Q | Pick up a nearby dropped weapon with a free hand. |
 | Escape | Use the native pause/settings menus. |
-| Restart round | Either player can request the next shared round from F5. |
+| Restart round | Any player can request the next shared round from F5. |
 
-Confirmed KO, death or sustained inability to recover triggers a shared restart.
-A recoverable fall alone should not end the round. Giving up requires filling
-the native meter. Selected gear returns after each reset; the single-player
-return-to-menu death screen stays suppressed.
+Confirmed KO, death, giving up or sustained inability to recover eliminates that
+fighter for the round. The round resets after three seconds once one fighter
+remains. A recoverable fall alone should not eliminate anyone. Giving up requires
+filling the native meter. Selected gear returns after each reset; the
+single-player return-to-menu death screen stays suppressed.
+
+Matches can start with two players; they do not wait for every available slot.
+A new fighter entering an active match triggers a shared fresh round. The host
+coordinates all participants and waits for their new fighters before resuming.
+Choose the player limit before hosting. Larger matches need more CPU and bandwidth;
+the 16-player cap is an allowed setting, not a performance guarantee.
 
 The restart button waits during normal respawn and allows another attempt if
 setup stalls for over six seconds. To change your fighter, return to the main
@@ -138,7 +153,7 @@ Two-PC Internet playtests confirmed usable combat, wounds, grabbing,
 dismemberment and enemy weapon pickup, with little perceived lag in those
 sessions. Exact wound and sever visuals have not been proved identical.
 
-**221 automated checks passed.** Real Steam tests created and closed all three
+**223 automated checks passed.** Real Steam tests created and closed all three
 lobby types, verified public visibility and exercised native message loopback.
 Two visible local game copies played a password-protected Direct IP session and
 completed host/client round restarts. Two-account Steam invitations, remote P2P/
@@ -192,13 +207,17 @@ where a change has not proved every reported case resolved.
 | Equipment choices differed from a Steam launch. | Preserved native selection/startup and tested compatible builds; the original cause was not conclusively isolated. |
 | Room codes and private settings complicated sharing. | Kept passwords optional, added Steam invitations alongside Direct IP, and excluded preferences/generated paths from the ZIP. |
 | Connecting required IP sharing and router setup. | Added Steam P2P/relay transport, friends/invite-only/public lobbies and a Steam-only browser. Real lobby visibility passed; two-account play remains untested. |
+| Matches were limited to two players. | Added host limits (default four, range 2–16), authenticated state relay and one native opponent adapter per remote player. Four local game windows connected successfully. |
+| A duel-style reset ended a larger match on the first defeat. | Track current-life eliminations and reset once one fighter remains; wait for fresh lives on every participant. |
+| Missing poses or disconnected players could strand a reset. | Retain known life IDs for recovery, expire sustained missing fighters and prune disconnected participants. |
+| Locked high-tier selections and repeated Baron equipment were confusing. | Enable native Free Mode buttons without changing progression. Repeated Master clicks produced varied kits; Baron remains the fixed native boss. |
 | A session admitted anyone who reached the host first. | Added host-verified password admission and session authentication for both transports. Wrong passwords cannot take the gameplay slot. |
 | Updates assumed every host had an IP/HTTP address. | Added bounded reliable Steam update transfer after peer admission, retaining staged installation on exit. |
 | Hosting with a blank IP failed. | Made the destination address join-only and reported occupied host ports explicitly. |
 | The guest had the wrong camera or limited movement. | Kept each PC in control of its own native player. |
 | Joining needed an existing enemy or showed a dummy. | Added native opponent creation and quarantined inactive arena actors. |
 | Duel/Carnage cards interrupted match entry. | Used explicit F5 entry through native start/Duel handlers, preserving the selected fighter. |
-| The client entered an empty arena after a reset. | Added current-life checks, waiting for both fighters and respawn retries; intermittent cases still need playtesting. |
+| The client entered an empty arena after a reset. | Added current-life checks, waiting for all fighters and respawn retries; intermittent cases still need playtesting. |
 | Death returned the client to single-player menus. | Suppressed result cards/exit timelines during multiplayer and coordinated shared resets. |
 | Character selection automatically pulled players back into a match. | Cleared the old match and required explicit re-entry after selection. |
 | Clients could not restart, or stalled resets blocked recovery. | Added acknowledged client requests, retained life IDs and a six-second retry path. |

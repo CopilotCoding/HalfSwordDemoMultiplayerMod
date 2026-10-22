@@ -1,6 +1,7 @@
 local UEHelpers = require("UEHelpers")
 local paths = require("paths")
 local Pose = require("pose")
+local FreeMode = dofile(paths.scripts..'/free_mode.lua')
 local pending = false
 local last_pawn = ""
 local renderer_failed = false
@@ -114,6 +115,8 @@ local function update()
             local ui_ok,ui_error=pcall(_G.HSMPSession.update_ui)
             if not ui_ok and tostring(ui_error)~=last_error then last_error=tostring(ui_error);log('Native UI: '..last_error)end
         end
+        local unlock_ok,unlock_error=pcall(FreeMode.update)
+        if not unlock_ok and tostring(unlock_error)~=last_error then last_error=tostring(unlock_error);log('Free Mode unlock: '..last_error)end
         if renderer_failed and started>=renderer_retry_at then renderer_failed=false end
         if (_G.HSMPDiagnosticRequests or 0)>0 then
             _G.HSMPDiagnosticRequests=0
@@ -196,4 +199,4 @@ assert(type(LoopInGameThreadAfterFrames)=='function','HalfSwordMP requires its p
 _G.HSMPUpdate=update
 _G.HSMPUpdateHandle=LoopInGameThreadAfterFrames(1,update)
 
-log("0.11.0: Steam lobbies/P2P and password-protected direct sessions. F8: discovery. F9: local pose preview.")
+log("0.12.0: Free Mode character unlock; configurable free-for-all over Steam or Direct IP. F8: discovery. F9: local pose preview.")

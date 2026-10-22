@@ -6,7 +6,8 @@ import re
 import socket
 import time
 
-from network import Bridge,atomic_write
+from network import atomic_write
+from party import Bridge,DEFAULT_PLAYERS,player_limit
 from updater import Updates,UpdateServer
 from version import VERSION
 
@@ -31,13 +32,14 @@ class Menu:
         self.last_command=""
         self.message="Offline — choose Host or Join"
         self.restart=False
-        self.settings={"automatic_updates":False,"host":"","port":7777}
+        self.settings={"automatic_updates":False,"host":"","port":7777,"max_players":DEFAULT_PLAYERS}
         self.preferences=preferences or runtime/'preferences.json'
         try:
             saved=json.loads(self.preferences.read_text())
             self.settings["automatic_updates"]=saved.get("automatic_updates") is True
             if isinstance(saved.get("host"),str) and HOST.fullmatch(saved["host"]):self.settings["host"]=saved["host"]
             if type(saved.get("port")) is int and 1<=saved["port"]<=65534:self.settings["port"]=saved["port"]
+            if type(saved.get('max_players'))is int and 2<=saved['max_players']<=16:self.settings['max_players']=saved['max_players']
         except (OSError,ValueError):pass
         atomic_write(runtime/"role.cfg","OFF\n")
         atomic_write(runtime/"match.request","OFF\n")
@@ -54,15 +56,19 @@ class Menu:
         atomic_write(self.runtime/"match.request","OFF\n")
     def command(self,line:str):
         p=line.strip().split("|")
-        if not((len(p)==6 and p[0]=='HSUI1')or(len(p)==11 and p[0]=='HSUI2'))or p[1]==self.last_command:return
+        if not((len(p)==6 and p[0]=='HSUI1')or(len(p)==11 and p[0]=='HSUI2')or(len(p)==12 and p[0]=='HSUI3'))or p[1]==self.last_command:return
         action=p[2]
         password='';name='';privacy='friends';target=''
-        if p[0]=='HSUI2':
+        if p[0]in('HSUI2','HSUI3'):
             from lobbies import unhex
             if p[6]not in('direct','steam'):raise ValueError('Unknown connection tab.')
             self.tab=p[6];privacy=p[7];target=''if p[10]=='-'else p[10]
             if action in('host','join','steam_host','steam_join'):password=unhex(p[9],128)
             if action=='steam_host':name=unhex(p[8],64)
+            if p[0]=='HSUI3'and action in('host','steam_host'):
+                try:self.settings['max_players']=player_limit(int(p[11]))
+                except ValueError:raise ValueError('Choose a host limit from 2 to 16 players.')from None
+                self.save()
         if action.startswith('steam_'):
             self.last_command=p[1]
             self.steam_command(action,privacy,name,password,target);return
@@ -77,7 +83,7 @@ class Menu:
         if action in ("host","join"):
             if action=="join" and not host:raise ValueError("Enter the host IP address")
             self.disconnect()
-            try:self.bridge=Bridge(action,None,self.build,self.runtime,port,host or None,password=password)
+            try:self.bridge=Bridge(action,None,self.build,self.runtime,port,host or None,password=password,max_players=self.settings['max_players'])
             except OSError as exc:
                 if action=="host" and (exc.errno in (errno.EADDRINUSE,10048) or getattr(exc,"winerror",None)==10048):
                     raise ValueError(f"Port {port} is already in use. Join that host, or choose a different port for a second host.") from None
@@ -100,7 +106,7 @@ class Menu:
             if not self.bridge:
                 raise ValueError("Connect before restarting a round")
             if not self.bridge.restart_round():
-                raise ValueError("Both fighters must be in the multiplayer match before restarting")
+                raise ValueError("At least two fighters must enter the multiplayer match before restarting")
             self.message="Starting the next multiplayer round"
         elif action=="auto_updates":
             self.settings["automatic_updates"]=p[5]=="1";self.save()
@@ -183,6 +189,8 @@ class Menu:
                         elif round_state["phase"]=="playing":message=f"Multiplayer round {round_state['id']} — your own fighter"
                     rtt=state.get('rtt_ms')
                     if type(rtt)in(int,float):message+=f' / RTT {rtt:.0f} ms'
+                    if type(state.get('players'))is int:message+=f" / {state['players']}/{state['max_players']} players"
+                    if state.get('slot')in state.get('eliminated',[]):message+=' / Out this round - waiting for the winner'
                 except (OSError,ValueError):pass
             if self.bridge:
                 try:
@@ -196,7 +204,7 @@ class Menu:
             role=self.bridge.peer.role if self.bridge else "off"
             can_restart=bool(self.bridge and self.bridge.restart_ready(now))
             values=["HSUISTATE1",message,int(self.settings["automatic_updates"]),self.settings["host"] or "-",
-                    self.settings["port"],VERSION,int(self.updates.pending is not None),time.time(),role,int(can_restart)]
+                    self.settings["port"],VERSION,int(self.updates.pending is not None),time.time(),role,int(can_restart),self.settings['max_players']]
             atomic_write(self.runtime/"ui.state","|".join(clean(v) for v in values)+"\n")
     def close(self,game_closed=False):
         self.disconnect()

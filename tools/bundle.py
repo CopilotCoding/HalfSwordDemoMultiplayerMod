@@ -78,6 +78,8 @@ def package_files(data: bytes) -> dict[str,bytes]:
     required.update({'mod/HalfSwordMP/Scripts/held_pose.lua','mod/HalfSwordMP/Scripts/input_recovery.lua'})
     required.add('mod/HalfSwordMP/Scripts/audio_guard.lua')
     required.add('mod/HalfSwordMP/Scripts/voice.lua')
+    required.add('mod/HalfSwordMP/Scripts/free_mode.lua')
+    required.update({'tools/party.py','tools/party_rounds.py','mod/HalfSwordMP/Scripts/roster.lua'})
     required.update({'tools/admission.py','tools/steam.py','tools/steam_runtime.py','tools/lobbies.py','tools/steam_updates.py',
                      'THIRD_PARTY.md','mod/HalfSwordMP/Scripts/ui.lua'})
     if not required<=result.keys():raise ValueError("Incomplete update package")

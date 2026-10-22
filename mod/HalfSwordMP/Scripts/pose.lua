@@ -1,5 +1,11 @@
 -- Game-thread-only adapter. The remote object is a non-colliding visual proxy.
 local Pose = {}
+local options=...
+if type(options)~='table'then options={}end
+local function session()return options.session or _G.HSMPSession end
+function Pose.new(callbacks)
+    return assert(loadfile(require('paths').scripts..'/pose.lua'))({secondary=true,session=callbacks})
+end
 local preview = false
 local actor, component, actor_world, mesh_name
 local last_counter = ""
@@ -108,8 +114,8 @@ function Pose.use_native(value)
 end
 function Pose.part(id) return id=="body" and component or parts[id] and parts[id].component end
 
-local Avatar = dofile(require("paths").scripts .. "/avatar.lua")
-_G.HSMPAvatar=Avatar
+local Avatar = options.secondary and _G.HSMPAvatar or dofile(require("paths").scripts .. "/avatar.lua")
+if not options.secondary then _G.HSMPAvatar=Avatar end
 function Pose.capture(pawn)
     serial = serial + 1
     if not _G.HSMPUI then _G.HSMPUI=dofile(require("paths").scripts.."/ui.lua") end
@@ -433,7 +439,7 @@ end
 
 function Pose.animate()
     if not interpolation or not valid(component) or not valid(draw_pawn) then
-        if _G.HSMPSession then _G.HSMPSession.animate(Pose) end
+        if session()then session().animate(Pose)end
         return
     end
     local now=require("UEHelpers").GetGameplayStatics():GetRealTimeSeconds(draw_pawn:GetWorld())
@@ -457,7 +463,7 @@ function Pose.animate()
                 p.component:K2_SetWorldTransform(t,false,{},true)
             end
         end
-        if _G.HSMPSession then _G.HSMPSession.animate(Pose)end
+        if session()then session().animate(Pose)end
         return
     end
     local r=frame.root
@@ -493,15 +499,16 @@ function Pose.animate()
         end
     end
     Geometry.draw(frame.colliders,t)
-    if _G.HSMPSession then _G.HSMPSession.animate(Pose) end
+    if session()then session().animate(Pose)end
 end
 
 function Pose.update(runtime,pawn,local_text,remote_text)
+    Pose.local_text=local_text
     local owned=_G.HSMPSession and _G.HSMPSession.capture_pawn()
     if valid(owned) then pawn=owned end
     update(runtime,pawn,local_text,remote_text)
     Pose.animate()
-    if _G.HSMPSession then _G.HSMPSession.after_render(Pose) end
+    if session()then session().after_render(Pose)end
 end
 
 function Pose.inspect(runtime, pawn, filename)

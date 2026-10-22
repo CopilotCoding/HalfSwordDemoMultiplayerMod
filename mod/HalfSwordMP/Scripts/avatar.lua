@@ -33,7 +33,10 @@ function Avatar.owner(pawn)
     local state=_G.HSMPAvatarOwner
     state.ids=state.ids or {}
     local key=path(pawn)
-    if not state.ids[key] then state.ids[key]=math.random(1,9999999) end
+    if not state.ids[key] then
+        local slot=_G.HSMPParty and _G.HSMPParty.slot()or 1
+        state.ids[key]=(slot-1)*600000+math.random(1,599999)
+    end
     return state.ids[key]
 end
 function Avatar.part_id(c)
