@@ -199,4 +199,4 @@ assert(type(LoopInGameThreadAfterFrames)=='function','HalfSwordMP requires its p
 _G.HSMPUpdate=update
 _G.HSMPUpdateHandle=LoopInGameThreadAfterFrames(1,update)
 
-log("0.12.0: Free Mode character unlock; configurable free-for-all over Steam or Direct IP. F8: discovery. F9: local pose preview.")
+log("0.12.1: Native duel spawn placement; configurable free-for-all over Steam or Direct IP. F8: discovery. F9: local pose preview.")

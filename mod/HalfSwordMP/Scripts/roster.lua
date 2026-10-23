@@ -34,13 +34,21 @@ end
 function Roster.slot()return state.slot end
 function Roster.primary()return state.primary end
 function Roster.eliminated()return state.eliminated end
-function Roster.spawn(first,second)
-    if not state.session or state.slot==1 then return end
-    local cx,cy=(first.X+second.X)/2,(first.Y+second.Y)/2
-    local dx,dy=first.X-cx,first.Y-cy
-    local angle=math.atan(dy,dx)+2*math.pi*(state.slot-1)/state.limit
-    local radius=math.sqrt(dx*dx+dy*dy)
-    return cx+radius*math.cos(angle),cy+radius*math.sin(angle),math.deg(angle)+180
+function Roster.spawn(native,origin)
+    -- Slot two always uses the opposite native duel entrance, even when the
+    -- lobby has spare slots. Extra slots subdivide the same native distance;
+    -- capacity and the level's unused legacy spawn defaults cannot move it.
+    local slot=state.session and state.slot or 2
+    if slot==1 then return end
+    local angle=math.pi
+    if slot>2 then
+        local count,start=2,3
+        while slot>=start+count do start=start+count;count=count*2 end
+        angle=(2*(slot-start)+1)*math.pi/count
+    end
+    local dx,dy=native.X-origin.X,native.Y-origin.Y
+    local c,s=math.cos(angle),math.sin(angle)
+    return origin.X+dx*c-dy*s,origin.Y+dx*s+dy*c,angle
 end
 function Roster.reset()
     for _,entry in pairs(peers)do entry.damage.stop();entry.fighter.destroy();entry.pose.destroy()end

@@ -21,6 +21,7 @@ local retiring_pawn
 local input_pawn
 local previous_remote_owner
 local frame
+local pending_spawn=false
 local tick=0
 local last_role_record
 local injury_state,injury_attacker
@@ -39,6 +40,7 @@ function Session.stop()
     input_pawn=nil
     previous_remote_owner=nil
     frame=nil
+    pending_spawn=false
     injury_state,injury_attacker=nil,nil
     local f=io.open(paths.runtime.."/frame.cfg","w");if f then f:write("OFF\n");f:close() end
     role,connected,nonce="off",false,""
@@ -55,17 +57,17 @@ function Session.adjust_guest_spawn(class,world,transform)
     for _,a in ipairs(FindAllOf('LevelScriptActor')or{})do
         if valid(a)and a:GetWorld():GetFullName()==world:GetFullName()
             and a:GetClass():GetFName():ToString()=='Arena_Cutting_Map_C'then
-            local first,second=a['Spawn Point 1'],a['Spawn Point 2']
+            -- Use the transform the native Duel handler is spawning now.
+            -- Spawn Point 1/2 are stale defaults, not its current entrances.
+            local origin=a:K2_GetActorLocation()
             local v=transform.Translation
-            local x,y,yaw=Roster.spawn(first,second)
+            local x,y,angle=Roster.spawn(v,origin)
             if x then
                 v.X,v.Y=x,y
-                local half=math.rad(yaw)/2;local q=transform.Rotation
-                q.X,q.Y,q.Z,q.W=0,0,math.sin(half),math.cos(half)
-            else
-                v.X,v.Y=first.X+second.X-v.X,first.Y+second.Y-v.Y
                 local q=transform.Rotation;local x,y,z,w=q.X,q.Y,q.Z,q.W
-                q.X,q.Y,q.Z,q.W=-y,x,w,-z
+                local c,s=math.cos(angle/2),math.sin(angle/2)
+                q.X,q.Y,q.Z,q.W=c*x-s*y,s*x+c*y,c*z+s*w,c*w-s*z
+                pending_spawn=true
             end
             return
         end
@@ -82,11 +84,12 @@ local function install_spawn_hook()
         end)}
         _G.HSMPNativeSpawnHook.finish={RegisterHook(finish,function(ctx,actor,transform)
             local p=actor:get()
-            if guest_spawning()and valid(p)and p:GetClass():GetFName():ToString()=='Willie_BP_C'then
+            if pending_spawn and guest_spawning()and valid(p)and p:GetClass():GetFName():ToString()=='Willie_BP_C'then
                 -- FinishSpawning receives the original Blueprint transform.
                 -- Keep the position established before deferred construction.
                 local source=p:GetTransform();local t=transform:get()
                 t.Translation=source.Translation;t.Rotation=source.Rotation
+                pending_spawn=false
             end
         end)}
     end
@@ -155,6 +158,7 @@ function Session.tick(pawn)
             Fighter.destroy();Waiting.release();Round.release();Damage.stop()
             local_pawn,local_world,retiring_pawn,frame=nil,nil,nil,nil
             input_pawn,previous_remote_owner=nil,nil
+            pending_spawn=false
             injury_state,injury_attacker=nil,nil
         end
         return role
@@ -163,9 +167,11 @@ function Session.tick(pawn)
     if local_world and local_world~=world:GetFullName() then
         Roster.reset()
         Fighter.destroy();Waiting.release();Round.release();Damage.stop();local_pawn=nil;retiring_pawn=nil;frame=nil
+        pending_spawn=false
     end
     local_world=world:GetFullName()
     if Round.poll(world,function()
+        pending_spawn=false
         Roster.reset()
         if _G.HSMPDropped and _G.HSMPDropped.reset then _G.HSMPDropped.reset()end
         previous_remote_owner=Fighter.owner()
@@ -189,8 +195,8 @@ function Session.tick(pawn)
             for _,a in ipairs(FindAllOf("LevelScriptActor") or {}) do
                 if valid(a) and a:GetWorld():GetFullName()==world:GetFullName()
                     and a:GetClass():GetFName():ToString()=="Arena_Cutting_Map_C" then
-                    local first=a["Spawn Point 1"];local ax,ay=first.X,first.Y
-                    local second=a["Spawn Point 2"];frame={ax,ay,second.X,second.Y};break
+                    local origin=a:K2_GetActorLocation()
+                    frame={origin.X,origin.Y,origin.X,origin.Y};break
                 end
             end
             local other=not frame and Waiting.candidate(pawn) or nil
@@ -213,8 +219,7 @@ function Session.tick(pawn)
         if valid(pc)and same(pc.Pawn,local_pawn)then
             if role=='join'and frame then
                 local r=pc:GetControlRotation()
-                local a=local_pawn:K2_GetActorLocation()
-                pc:SetControlRotation({Pitch=r.Pitch,Yaw=math.deg(math.atan(frame[2]+frame[4]-2*a.Y,frame[1]+frame[3]-2*a.X)),Roll=r.Roll})
+                pc:SetControlRotation({Pitch=r.Pitch,Yaw=local_pawn:K2_GetActorRotation().Yaw,Roll=r.Roll})
             end
             local_pawn:EnableInput(pc)
             pc:ResetIgnoreMoveInput();pc:ResetIgnoreLookInput()

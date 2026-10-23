@@ -1,6 +1,6 @@
 # HalfSwordMP
 
-**Experimental multiplayer for Half Sword Demo · 4 players by default · Version 0.12.0 · Protocol 23**
+**Experimental multiplayer for Half Sword Demo · 4 players by default · Version 0.12.1 · Protocol 23**
 
 ## About the mod
 
@@ -41,8 +41,9 @@ this ZIP or host update packages. First-time setup may need Internet access.
    your demo folder, installs the mod, and opens the game.
 4. Repeat on each PC.
 
-**Upgrading:** install this ZIP on every PC. Protocol 23 is incompatible with
-earlier releases, so update all players before joining.
+**Upgrading:** install this ZIP on every PC, including those using 0.12.0,
+to fix guest spawn placement. Protocol 23 requires matching 0.12.x releases.
+Earlier protocol versions cannot connect.
 
 After installation, you can launch normally through **Steam**. A hidden
 companion starts automatically and exits with that game window. Python must
@@ -106,7 +107,10 @@ filling the native meter. Selected gear returns after each reset; the
 single-player return-to-menu death screen stays suppressed.
 
 Matches can start with two players; they do not wait for every available slot.
-A new fighter entering an active match triggers a shared fresh round. The host
+The first two players use opposite native duel entrances, regardless of the
+lobby capacity. Extra players use the other sides at the same native spawn
+distance and face inward. A new fighter entering an active match triggers a
+shared fresh round. The host
 coordinates all participants and waits for their new fighters before resuming.
 Choose the player limit before hosting. Larger matches need more CPU and bandwidth;
 the 16-player cap is an allowed setting, not a performance guarantee.
@@ -229,6 +233,7 @@ where a change has not proved every reported case resolved.
 
 | Issue encountered | Fix or current status |
 | --- | --- |
+| Guests spawned outside the arena or faced sideways after the four-player update. | Use the current native Duel spawn transform and arena origin, preserve native height/rotation, and keep slot two opposite the host at every capacity. Additional slots use the same native distance. |
 | Opponents appeared in different positions. | Used common arena coordinates and measured poses instead of independent remote movement. |
 | Visual proxies lacked cuts, stabs or weapon contact. | Used native fighters, collision bodies and weapon/query components. |
 | Launches, phantom impacts and excessive knockback. | Removed competing remote simulation, extra capsule blocking and duplicate replay forces. Native knockback remains unchanged. |
